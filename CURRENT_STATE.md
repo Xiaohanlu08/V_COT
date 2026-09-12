@@ -25,7 +25,7 @@ Verified on 2026-09-12:
 - Additional protected Hugging Face packages verified after VLMEvalKit dependency bring-up: `huggingface-hub==0.36.2`, `tokenizers==0.21.4`, `accelerate==1.15.0`, `datasets==5.0.1`, `qwen-vl-utils==0.0.14`.
 - CUDA tensor test passed.
 - Monet-7B checkpoint is fully downloaded and structurally verified.
-- The pinned VLMEvalKit snapshot is extracted at `~/work/V_COT/third_party/VLMEvalKit` and contains the `VStarBench` dataset entry.
+- The pinned VLMEvalKit snapshot is extracted at `~/work/V_COT/third_party/VLMEvalKit`.
 
 ## Verified Baseline Inference
 - Official Monet example runs successfully and returns `\\boxed{C}`.
@@ -36,28 +36,28 @@ Verified on 2026-09-12:
 - Forced-token checks are engineering diagnostics only, not benchmark evidence.
 
 ## VLMEvalKit Dependency Bring-Up — COMPLETE
-A full unconstrained `pip install -r requirements.txt` was intentionally avoided because a resolver dry-run would upgrade `transformers` from verified `4.54.0` to `5.17.0`, move the Hugging Face stack, install duplicate OpenCV / dotenv distributions, and downgrade `pylatexenc`.
+A full unconstrained `pip install -r requirements.txt` was intentionally avoided because a resolver dry-run would upgrade `transformers` from verified `4.54.0` to `5.17.0` and perturb the Hugging Face stack.
 
-Controlled bring-up instead used a filtered dependency set and constraints freezing the verified Monet/Hugging Face stack. A source-level import audit identified `rouge` as the only undeclared hard external import. `rouge==1.0.1` was added with `--no-deps`. `setuptools` was pinned to `81.0.0` to restore the legacy `pkg_resources` API required by `openai-clip`.
+Controlled bring-up instead used a filtered dependency set plus constraints freezing the verified Monet/Hugging Face stack. A source-level import audit identified `rouge` as the only undeclared hard external import. `rouge==1.0.1` was added with `--no-deps`, and `setuptools` was pinned to `81.0.0` to restore legacy `pkg_resources` compatibility required by `openai-clip`.
 
-Final import verification on 2026-09-12:
+Final import verification:
 ```text
 vlmeval import: PASS
 vlmeval version: 0.2rc1
 ```
 
-Non-fatal messages still observed:
-- missing `.env` warning from `vlmeval.smp.misc.load_env`;
-- `pkg_resources` deprecation warning emitted by Jieba;
-- `TRANSFORMERS_CACHE` deprecation warning emitted by Transformers;
-- `pip check` may still report `decord 0.6.0 is not supported on this platform`; `decord` imports successfully and this is treated as a video-only compatibility warning, not a blocker for image-only VStarBench.
+Non-fatal messages that may still appear:
+- missing `.env` warning from VLMEvalKit;
+- Jieba `pkg_resources` deprecation warning;
+- Transformers `TRANSFORMERS_CACHE` deprecation warning;
+- `pip check` may still report `decord 0.6.0 is not supported on this platform`; `decord` imports successfully and VStarBench is image-only.
 
 Dependency bring-up is closed. Do not install additional optional packages unless a selected evaluation path demonstrably requires them.
 
 ## Official Monet Evaluation Integration Facts
 Pinned Monet README specifies the following for VLMEvalKit evaluation:
 - use `vllm==0.10.0`;
-- copy `Monet/inference/vllm/monet_gpu_model_runner.py` into `VLMEvalKit/Monet_models/`;
+- copy `Monet/inference/vllm/monet_gpu_model_runner.py` into a `Monet_models` package visible to VLMEvalKit;
 - use a Python startup hook to replace `vllm.v1.worker.gpu_model_runner` with the Monet runner and set latent IDs `151666/151667`;
 - use the system prompt: `You are a helpful multimodal assistant. You are required to answer the question based on the image provided. Put your final answer in \\boxed{}.`;
 - use an API model as supplementary judge for exact reproduction of reported benchmark scores.
@@ -66,60 +66,85 @@ The Monet README names the startup file `sitecustomized.py`, but Python startup 
 
 ## Pinned VLMEvalKit Qwen2.5-VL / VStar Path — INSPECTED
 Exact source inspection at the selected VLMEvalKit snapshot established:
+- wrapper: `Qwen2VLChat`;
+- vLLM construction uses `max_num_seqs=5`, `max_model_len=32768`, image limit 24, GPU memory utilization 0.9, and automatic tensor-parallel size based on visible GPUs;
+- `generate_inner_vllm` explicitly uses `SamplingParams(temperature=0.0, max_tokens=self.max_new_tokens, stop_token_ids=None)`;
+- default `max_new_tokens` is 2048;
+- normal VLMEvalKit returns only `o.outputs[0].text` and discards `o.outputs[0].token_ids`;
+- `VStarBench` is an `ImageMCQDataset` and follows the standard dataset MCQ prompt path;
+- pinned `Qwen2.5-VL-7B-Instruct` registration sets `use_custom_prompt=False`;
+- Monet's system prompt is inserted independently by `Qwen2VLChat` before the user content.
 
-### Model wrapper and vLLM construction
-`vlmeval/vlm/qwen2_vl/model.py` uses `Qwen2VLChat`. With `use_vllm=True`, the wrapper creates `vllm.LLM` with:
-- `max_num_seqs=5`;
-- `max_model_len=32768`;
-- image limit 24 per prompt;
-- GPU memory utilization default 0.9;
-- automatic tensor-parallel size according to visible GPU count.
+## VStarBench Dataset / Prompt Plumbing — VERIFIED
+The first dataset-only build completed successfully after an initial failed network route automatically fell back to a working download route.
 
-This differs from Monet's standalone helper setting (`max_model_len=4096`). For VLMEvalKit-based reproduction, do not silently replace the wrapper's `32768`; record the difference and preserve the evaluation path unless an upstream Monet instruction says otherwise.
-
-### Actual vLLM sampling
-Although the wrapper constructor exposes sampling defaults, `generate_inner_vllm` explicitly creates:
-```python
-SamplingParams(
-    temperature=0.0,
-    max_tokens=self.max_new_tokens,
-    stop_token_ids=None,
-)
+Observed result:
+```text
+VStarBench.tsv: 162MB [00:16, 9.97MB/s]
+dataset class: ImageMCQDataset
+dataset name: VStarBench
+num samples: 191
+columns: ['index', 'question', 'A', 'B', 'C', 'D', 'answer', 'category', 'image']
+VSTAR_DATASET_PROMPT_PASS=True
 ```
-Thus the vLLM evaluation path is greedy (`temperature=0.0`) with the wrapper's `max_new_tokens` limit (default 2048).
 
-### Raw token IDs are currently discarded
-After `self.llm.generate(...)`, pinned VLMEvalKit does:
-```python
-for o in outputs:
-    generated_text = o.outputs[0].text
-...
-return generated_text
+First sample:
+```text
+index: 0
+question: What is the material of the glove?
+A: rubber
+B: cotton
+C: kevlar
+D: leather
+answer: A
+image: /home/user6/LMUData/images/VStarBench/0.png
 ```
-Therefore normal VLMEvalKit output retains only generated text and discards `o.outputs[0].token_ids`. This is the exact point that must be instrumented for natural latent-trigger characterization. Capturing `o.outputs[0].token_ids` at this point can be observational only and need not change sampling or model behavior.
 
-### VStarBench prompt path
-`VStarBench` is registered in `ImageMCQDataset`, whose `TYPE = 'MCQ'`. Its standard dataset prompt is image(s) followed by text containing optional hint, question, options, and:
-`Please select the correct answer from the options above.`
+First standard prompt:
+```text
+Question: What is the material of the glove?
+Options:
+A. rubber
+B. cotton
+C. kevlar
+D. leather
+Please select the correct answer from the options above.
+```
 
-The pinned `Qwen2.5-VL-7B-Instruct` model registration sets `use_custom_prompt=False`, so the dataset's `ImageMCQDataset.build_prompt` path is the relevant baseline prompt behavior rather than Qwen2VLPromptMixin's custom MCQ path.
+This closes the dataset/network/prompt plumbing check.
 
-The Monet system prompt is independently inserted by `Qwen2VLChat` when `system_prompt` is supplied, before the user content, and therefore can coexist with the standard VStarBench dataset prompt exactly as Monet requests.
+## Raw-Token Probe — IMPLEMENTED, NOT YET RUN
+Two scripts were added to V_COT:
+- `scripts/08_vstar_single_raw_token_probe.py`
+- `scripts/08_vstar_single_raw_token_probe.sh`
 
-### Custom config path
-Pinned `run.py` supports JSON model configs containing `class` plus class-specific constructor arguments. This allows a Monet evaluation entry to use `class: Qwen2VLChat`, the local Monet checkpoint path, `use_vllm: true`, Monet's system prompt, and the desired image preprocessing settings without editing the upstream VLMEvalKit model registry in place.
+The launcher:
+- verifies the pinned Monet commit and local checkpoint;
+- creates a temporary `Monet_models` package containing the exact pinned Monet runner;
+- applies the official Monet startup patch body via correctly named `sitecustomize.py`;
+- sets `LATENT_SIZE=10` and latent IDs `151666/151667`;
+- defaults to four low-memory GPUs, with `VCOT_GPUS` available as an explicit override;
+- runs from the pinned VLMEvalKit directory and logs to `logs/08_vstar_single_raw_token_probe.log`.
 
-## Natural Latent-Trigger Status
-Natural latent activation is not yet characterized. Planned first scan:
+The Python probe:
+- builds VStarBench sample 0 through VLMEvalKit;
+- instantiates `Qwen2VLChat` with the local Monet-7B checkpoint, official Monet system prompt, VStar-compatible image preprocessing, `use_custom_prompt=False`, and `use_vllm=True`;
+- preserves VLMEvalKit generation semantics;
+- wraps only `self.llm.generate` to capture the returned vLLM object observationally;
+- records the final chat-template prompt, actual sampling parameters, raw generated text, `o.outputs[0].token_ids`, token pieces, latent start/end positions, and latent segment count;
+- explicitly rejects any non-empty `allowed_token_ids`, so this probe cannot silently become another forced-token diagnostic.
+
+The raw-token probe has not yet been executed on the GPU server, so no natural latent-trigger claim should be made yet.
+
+## Natural Latent-Trigger Plan
+First scientific characterization after the single-sample probe passes:
 - dataset: `VStarBench`;
 - initial subset: 20–50 examples;
 - `LATENT_SIZE=10`;
 - no forced tokens and no `allowed_token_ids`;
 - generation semantics identical to the pinned VLMEvalKit vLLM path;
 - record raw token IDs, raw text, start-token presence (`151666`), end-token presence (`151667`), and latent-segment count;
-- compute trigger rate only after the raw-token path is verified.
-
-Before loading Monet for that scan, first perform a lightweight dataset/plumbing check: build `VStarBench`, verify download/MD5/image extraction, and print the first standard prompt. This isolates dataset/network/prompt issues from model inference.
+- compute `r_trigger = #samples emitting 151666 / total` only after the capture path is verified.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -132,9 +157,10 @@ Before loading Monet for that scan, first perform a lightweight dataset/plumbing
 - [x] Place a reproducible VLMEvalKit snapshot and verify VStarBench is present.
 - [x] Complete controlled VLMEvalKit dependency bring-up.
 - [x] Inspect exact Monet/VLMEvalKit evaluation integration and raw token-ID capture point.
-- [ ] Verify VStarBench dataset build and first prompt without model loading.
-- [ ] Implement observational raw-token capture without changing generation semantics.
-- [ ] Measure natural latent-trigger frequency on a VStarBench subset.
+- [x] Verify VStarBench dataset build and first prompt without model loading.
+- [x] Implement observational single-sample raw-token capture.
+- [ ] Run and verify the single-sample raw-token probe.
+- [ ] Measure natural latent-trigger frequency on a 20–50 sample VStarBench subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
 - [ ] Freeze reproduced baseline with a Git tag.
 - [ ] Locate and instrument exact latent-state tensors needed for V0 experiments.
@@ -146,11 +172,11 @@ Before loading Monet for that scan, first perform a lightweight dataset/plumbing
 - Windows-to-Linux transfers may convert LF to CRLF.
 - `huggingface_hub` HEAD metadata calls are incompatible with the current HF mirror for the Monet checkpoint; direct resumable GET is the verified workaround.
 - `nvcc` is not installed system-wide.
-- `decord==0.6.0` triggers a platform-support warning in `pip check` even though Python import succeeds; do not use `pip check` cleanliness as the sole VStarBench gate.
+- `decord==0.6.0` triggers a platform-support warning in `pip check` even though Python import succeeds.
 - vLLM shutdown may emit NCCL/resource-tracker cleanup warnings after successful inference.
 
 ## Next Action
-Do not install anything else and do not load Monet yet. Build the pinned `VStarBench` dataset through VLMEvalKit and inspect the first sample's standard prompt/image path. If this passes, create the observational raw-token capture path at `o.outputs[0].token_ids` and then run the first natural latent-trigger scan with `LATENT_SIZE=10` and no forced tokens.
+Transfer/create `scripts/08_vstar_single_raw_token_probe.py` and `scripts/08_vstar_single_raw_token_probe.sh` on the GPU server, then run the launcher once. Do not modify model sampling, do not add forced token constraints, and do not start the 20–50 sample scan until the single-sample probe prints `VSTAR_SINGLE_RAW_TOKEN_PROBE_PASS=True`.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
