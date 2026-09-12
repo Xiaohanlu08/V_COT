@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MONET_DIR="${ROOT_DIR}/third_party/Monet"
 MODEL_DIR="${ROOT_DIR}/models/Monet-7B"
 MONET_REPO="https://github.com/NOVAglow646/Monet.git"
+MONET_PROXY_REPO="https://gh-proxy.com/https://github.com/NOVAglow646/Monet.git"
 MONET_SHA="08939998d3d643a73a316e349faa34f420429153"
 PIP_INDEX_URL_DEFAULT="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 HF_ENDPOINT_DEFAULT="https://hf-mirror.net"
@@ -44,19 +45,18 @@ python -m pip install -i "${PIP_INDEX_URL}" huggingface_hub
 
 printf '\n[3/6] Preparing pinned Monet source\n'
 if [[ ! -d "${MONET_DIR}/.git" ]]; then
-  # Try a mainland-friendly public GitHub proxy first. If it is unavailable,
-  # fall back to the official GitHub URL. The final SHA check guarantees source identity.
-  PROXY_REPO="https://gh-proxy.com/github.com/NOVAglow646/Monet.git"
-  if git clone --no-checkout "${PROXY_REPO}" "${MONET_DIR}"; then
+  # Prefer the GitHub proxy. The proxy URL must wrap the full original GitHub URL.
+  if git -c http.version=HTTP/1.1 clone --no-checkout "${MONET_PROXY_REPO}" "${MONET_DIR}"; then
     echo '[INFO] Monet cloned through gh-proxy.'
   else
-    echo '[WARN] GitHub proxy failed; falling back to official GitHub.'
+    echo '[WARN] GitHub proxy failed; falling back to official GitHub over HTTP/1.1.'
     rm -rf "${MONET_DIR}"
-    git clone --no-checkout "${MONET_REPO}" "${MONET_DIR}"
+    git -c http.version=HTTP/1.1 clone --no-checkout "${MONET_REPO}" "${MONET_DIR}"
   fi
 fi
 
-git -C "${MONET_DIR}" fetch --all --tags --prune || true
+# Fetch is best-effort because the pinned commit may already be present after clone.
+git -C "${MONET_DIR}" -c http.version=HTTP/1.1 fetch --all --tags --prune || true
 git -C "${MONET_DIR}" checkout --detach "${MONET_SHA}"
 ACTUAL_SHA="$(git -C "${MONET_DIR}" rev-parse HEAD)"
 if [[ "${ACTUAL_SHA}" != "${MONET_SHA}" ]]; then
