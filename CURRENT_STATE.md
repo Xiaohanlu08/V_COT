@@ -16,7 +16,7 @@ Establish a reproducible Monet baseline before implementing any new latent-super
 - Baseline specification: `BASELINE.md`
 
 ## Last Verified State
-The V_COT project root and the pinned Monet source are present on the GPU server.
+The V_COT project root, the pinned Monet source, the runtime stack, and the Monet-7B checkpoint are now present and verified on the GPU server.
 
 Verified on 2026-09-12:
 - Monet source is at `~/work/V_COT/third_party/Monet`.
@@ -36,16 +36,20 @@ Verified on 2026-09-12:
   - `transformers==4.54.0`
   - `trl==0.15.2`
 - PyTorch CUDA build is 12.6, CUDA is available, all 10 GPUs are visible, and a CUDA tensor operation passed on RTX 3090 (compute capability 8.6).
-- the first Monet-7B checkpoint download attempt partially succeeded but `huggingface_hub` aborted with `FileMetadataError: Distant resource does not have a Content-Length.` followed by `LocalEntryNotFoundError`.
-- several small metadata files were already downloaded successfully before the failure.
+- Monet-7B was downloaded successfully through the direct-GET mirror workaround and structurally verified.
+- checkpoint config reports `model_type=qwen2_5_vl` and architecture `Qwen2_5_VLForConditionalGeneration`.
+- `model.safetensors.index.json` references exactly 4 weight shards.
+- verified shard sizes are approximately 4.622, 4.628, 4.633, and 1.557 GiB.
+- indexed tensor size and actual shard size both equal 15.44 GiB.
+- local checkpoint directory is `~/work/V_COT/models/Monet-7B` and occupies about 16 GiB on disk.
 
-The download failure is a mirror/`huggingface_hub` metadata-HEAD compatibility issue, not a CUDA/runtime failure. The active `scripts/03_download_monet7b.sh` now bypasses `hf download` and performs direct resumable HTTP GET requests through `hf-mirror.net`, then verifies the checkpoint shard layout from `model.safetensors.index.json`.
+The runtime and checkpoint gates are therefore complete. The next gate is official-example smoke inference and latent-mode verification.
 
 ## Current Task
-1. Transfer the revised `scripts/03_download_monet7b.sh` to the server.
-2. Re-run the checkpoint download. Existing completed files will be kept, and missing files/weight shards will be downloaded with direct GET requests.
-3. After structural verification succeeds, run `scripts/04_monet_smoke_inference.sh` on a single RTX 3090.
-4. Record the raw model output and whether `<abs_vis_token> ... </abs_vis_token>` appears, confirming latent-mode behavior.
+1. Run `scripts/04_monet_smoke_inference.sh` on a single RTX 3090, physical GPU 0 by default.
+2. Verify that the official Monet example produces a non-empty output.
+3. Record the raw output, cleaned output, and whether `<abs_vis_token>` and `</abs_vis_token>` appear.
+4. If a single 24 GiB 3090 cannot initialize vLLM because of memory pressure, do not alter the runtime stack; retry the same smoke test with 2-GPU tensor parallelism using a controlled script change.
 
 ## Next Milestones
 - [x] Select the exact Monet implementation to use as the baseline.
@@ -58,7 +62,7 @@ The download failure is a mirror/`huggingface_hub` metadata-HEAD compatibility i
 - [x] Create the `vcot` Python 3.10 environment through domestic mirrors.
 - [x] Verify GPU driver/CUDA compatibility for the Monet/vLLM dependency set.
 - [x] Install and verify the pinned Monet runtime requirements.
-- [ ] Download and structurally verify the official Monet-7B checkpoint through `hf-mirror.net`.
+- [x] Download and structurally verify the official Monet-7B checkpoint through `hf-mirror.net`.
 - [ ] Reproduce official inference on at least one provided example.
 - [ ] Observe/verify latent-mode generation behavior.
 - [ ] Reproduce the selected Monet benchmark baseline under documented settings.
@@ -80,19 +84,19 @@ This is a resource-allocation decision, not a change to the scientific goal.
 None. V0 has not started.
 
 ## Current Experiment
-Baseline checkpoint download and official-example smoke inference. This is still infrastructure/baseline reproduction, not a scientific experiment.
+Official-example Monet smoke inference. This is still baseline reproduction, not a scientific experiment.
 
 ## Known Issues
 - Direct GitHub access from the target server is unavailable; GitHub must not be part of the server-side bootstrap path.
 - Windows GitHub access is also intermittent; when synchronization fails, current scripts can be handed off directly as files while GitHub remains the authoritative project record.
-- `huggingface_hub` can fail against the current mirror because the mirror/proxy may omit `Content-Length` from HEAD metadata responses. Direct GET downloads are the current workaround; do not downgrade the verified runtime stack for this network-layer issue.
+- `huggingface_hub` can fail against the current mirror because the mirror/proxy may omit `Content-Length` from HEAD metadata responses. The checkpoint was therefore downloaded with direct resumable GET requests; do not downgrade the verified runtime stack for this network-layer issue.
 - Windows-to-Linux transfer previously converted shell scripts to CRLF; `.gitattributes` enforces LF for shell scripts, and transferred scripts should still be normalized with `sed -i 's/\r$//'` before execution when necessary.
 - `nvcc` is not installed system-wide. This is not a blocker for inference, but later DeepSpeed/custom CUDA extension compilation may require a CUDA toolkit.
 - Official Monet SFT scripts are written for 8 GPUs with DeepSpeed ZeRO-2; they will not be treated as a drop-in 4 x RTX 3090 recipe.
 - The project will not change torch/vLLM/Transformers versions casually after runtime verification.
 
 ## Next Action
-Replace the server copy of `scripts/03_download_monet7b.sh` with the revised direct-GET version and run it again. Do not delete the partially downloaded model directory; completed files should be reused. After checkpoint verification succeeds, run `scripts/04_monet_smoke_inference.sh` and return the raw output plus latent-token check.
+Run `scripts/04_monet_smoke_inference.sh` and return the final initialization/generation output, especially `RAW OUTPUT`, `CLEANED OUTPUT`, and `LATENT CHECK`. Do not begin benchmark evaluation or V0 development until this smoke inference is verified.
 
 ## Update Rule
 After every verified step, update this file with:
