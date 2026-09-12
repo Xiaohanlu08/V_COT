@@ -149,11 +149,20 @@ A failed experiment must be recorded as carefully as a successful one. Do not de
 - diagnostic heuristic option accuracy: 0.70
 - `VSTAR_NATURAL_TRIGGER_SCAN_PASS=True`
 
-**Interpretation:** Natural latent activation is not rare in this pilot: 40% of sampled examples emitted the latent-start token under unforced greedy evaluation. All 20 samples had balanced start/end marker accounting, and every triggered sample contained exactly one detected latent segment; no multi-segment behavior was observed in this subset. The sample size is too small for a precise benchmark-wide estimate: the approximate 95% Wilson interval for an 8/20 trigger proportion is about 0.22–0.61. The 0.70 heuristic option accuracy is only a sanity-check extraction metric and is not the official Monet/VLMEvalKit VStarBench score.
+**Post-hoc JSONL subgroup inspection:**
+- Triggered (`n=8`): diagnostic correct `3/8 = 0.375`, mean generated tokens `77.25`, range `60–106`, categories `direct_attributes=5`, `relative_position=3`.
+- Non-triggered (`n=12`): diagnostic correct `11/12 = 0.917`, mean generated tokens `37.00`, range `17–51`, categories `direct_attributes=9`, `relative_position=3`.
+- All eight triggered samples had exactly one complete latent segment of length 10.
+- All 20 samples had balanced latent start/end marker accounting; no multi-segment behavior was observed.
+- Exploratory category trigger rates: direct attributes `5/14 = 0.357`; relative position `3/6 = 0.500`.
+- Post-hoc Fisher exact test for trigger status vs diagnostic correctness: two-sided `p≈0.018`.
+- Post-hoc Mann–Whitney test for generated-token count: two-sided `p≈1.6e-5`.
 
-**Conclusion:** KEEP. The natural-trigger signal is strong enough to justify full-dataset characterization before V0. The pilot does not yet establish whether triggering is associated with question category, answer correctness, or output length.
+**Interpretation:** Natural latent activation is not rare in this pilot: 40% of sampled examples emitted the latent-start token under unforced greedy evaluation. The sample size is too small for a precise benchmark-wide estimate: the approximate 95% Wilson interval for 8/20 is about 0.22–0.61. The diagnostic correctness and response-length subgroup differences are strong exploratory signals, but they are not causal evidence. Monet chooses when to emit the latent-start token, so trigger status may be a marker of hard or uncertain examples rather than the cause of lower accuracy. The 0.70 heuristic option accuracy and all subgroup correctness numbers are diagnostic extraction metrics only, not official Monet/VLMEvalKit scores.
 
-**Next action:** Inspect the per-sample JSONL for triggered vs non-triggered correctness/category/length patterns, then run the same observational scan on all 191 VStarBench samples if no instrumentation anomaly is found. Do not start V0 training yet.
+**Conclusion:** KEEP. The JSONL instrumentation is clean and the observed trigger/correctness pattern strengthens the motivation for evidence-gated or utility-gated latent supervision rather than assuming all natural latent states are useful.
+
+**Next action:** Run the same observational protocol on all 191 VStarBench samples. Then estimate benchmark-wide trigger rate and category-level rates, and reassess trigger-vs-correctness/length associations before any causal intervention or V0 training.
 
 ---
 
