@@ -16,29 +16,27 @@ Establish a reproducible Monet baseline before implementing any new latent-super
 - Baseline specification: `BASELINE.md`
 
 ## Last Verified State
-The V_COT repository has been initialized and the official Monet upstream source/commit has been pinned in project documentation.
-
-The target 4 x RTX 3090 server has **restricted overseas access**, not a full Internet outage.
+The V_COT project root and the pinned Monet source are present on the GPU server.
 
 Verified on 2026-09-12:
-- TUNA PyPI mirror is reachable from the server (`HTTP/2 200`).
-- `https://hf-mirror.net` is reachable from the server (`HTTP/2 200`).
-- direct GitHub access fails with GnuTLS handshake errors.
-- `gh-proxy.com` and `ghfast.top` also fail with GnuTLS handshake errors from this server.
-- `gitclone.com` returned HTTP 502 during the test.
-- Monet source has been transferred to the GPU server at `~/work/V_COT/third_party/Monet`.
-- server-side verification confirms Monet HEAD is exactly `08939998d3d643a73a316e349faa34f420429153`.
-- however, the V_COT project root files were not transferred: the server root currently contains only `third_party/`, so `scripts/01_prepare_restricted_env.sh` and the project anchor files are missing on the server.
+- Monet source is at `~/work/V_COT/third_party/Monet`.
+- server-side Monet HEAD is exactly `08939998d3d643a73a316e349faa34f420429153`.
+- TUNA PyPI mirror is reachable (`HTTP/2 200`).
+- `https://hf-mirror.net` is reachable (`HTTP/2 200`).
+- direct GitHub access is unavailable from the GPU server and source synchronization must continue through the Windows staging machine.
+- `vcot` Conda environment was created successfully with Python 3.10.21.
+- the server contains 10 x NVIDIA GeForce RTX 3090, each with 24 GiB VRAM.
+- NVIDIA driver is 570.144 and `nvidia-smi` reports CUDA 12.8 capability.
+- GPU 7 was occupied by another Python process using about 15.5 GiB during the probe; project development should avoid GPU 7 unless it becomes free.
+- system `nvcc` is not currently available.
+- PyTorch was intentionally not installed during the first compatibility probe.
 
-Therefore GitHub source transport must continue to be relayed through an Internet-connected machine, while Python packages and model checkpoints should be downloaded directly on the GPU server through the verified mirrors.
-
-No server-side Monet Python environment, model download, inference result, benchmark result, or modified method has yet been verified.
+The current driver is suitable for the pinned vLLM/PyTorch runtime path. The next controlled installation pins `torch==2.7.1`, `torchvision==0.22.1`, `vllm==0.10.0`, `transformers==4.54.0`, and `trl==0.15.2` before installing the remaining Monet requirements.
 
 ## Current Task
-1. Transfer the missing V_COT project-root files from the Windows staging copy to `~/work/V_COT` without disturbing the already verified `third_party/Monet` tree.
-2. Verify that `scripts/01_prepare_restricted_env.sh`, `PROJECT_GOAL.md`, `CURRENT_STATE.md`, `DECISIONS.md`, `EXPERIMENTS.md`, and `BASELINE.md` exist on the server.
-3. Run `scripts/01_prepare_restricted_env.sh` on the server.
-4. Inspect GPU driver/CUDA compatibility before installing Monet's heavy requirements.
+1. Synchronize the newly added `scripts/02_install_monet_runtime.sh` from GitHub to the Windows staging tree and upload it to the GPU server.
+2. Run the script in the existing `vcot` environment using the TUNA PyPI mirror.
+3. Verify package versions, `pip check`, CUDA availability, and a minimal CUDA tensor operation.
 
 ## Next Milestones
 - [x] Select the exact Monet implementation to use as the baseline.
@@ -46,11 +44,11 @@ No server-side Monet Python environment, model download, inference result, bench
 - [x] Characterize the server network as restricted-overseas rather than fully offline.
 - [x] Verify TUNA PyPI availability from the server.
 - [x] Verify HF mirror availability from the server.
+- [x] Transfer the V_COT project-root files to the server.
 - [x] Transfer pinned Monet source to `third_party/Monet` and verify its SHA on the server.
-- [ ] Transfer the V_COT project-root files to the server.
-- [ ] Create the `vcot` Python 3.10 environment through domestic mirrors.
-- [ ] Verify GPU driver/CUDA compatibility for the Monet/vLLM dependency set.
-- [ ] Install the pinned Monet requirements.
+- [x] Create the `vcot` Python 3.10 environment through domestic mirrors.
+- [x] Verify GPU driver/CUDA compatibility for the Monet/vLLM dependency set.
+- [ ] Install and verify the pinned Monet runtime requirements.
 - [ ] Download the official Monet-7B checkpoint through `hf-mirror.net`.
 - [ ] Reproduce official inference on at least one provided example.
 - [ ] Observe/verify latent-mode generation behavior.
@@ -61,8 +59,10 @@ No server-side Monet Python environment, model download, inference result, bench
 - [ ] Start V0 only after the above checks pass.
 
 ## Hardware Plan
-- Development/debug/V0 pilot: 4 x RTX 3090.
-- Full-scale or RL/VLPO experiments: H200 when justified by memory/runtime.
+- The physical server has 10 x RTX 3090.
+- Development/debug/V0 pilot will initially use GPUs 0-3 as a 4 x RTX 3090 allocation.
+- Avoid GPU 7 while the currently observed external process remains active.
+- Full-scale or RL/VLPO experiments may later use more 3090s or H200 when justified by memory/runtime.
 
 This is a resource-allocation decision, not a change to the scientific goal.
 
@@ -70,17 +70,17 @@ This is a resource-allocation decision, not a change to the scientific goal.
 None. V0 has not started.
 
 ## Current Experiment
-Environment bootstrap only; not yet an experiment.
+Environment/runtime bootstrap only; not yet a scientific experiment.
 
 ## Known Issues
 - Direct GitHub access from the target server is unavailable; GitHub must not be part of the server-side bootstrap path.
-- The V_COT project root and Monet source were transferred separately; only Monet is currently present and verified on the server.
+- Windows-to-Linux transfer previously converted shell scripts to CRLF; `.gitattributes` now enforces LF for shell scripts, and existing transferred scripts can be normalized with `sed -i 's/\r$//'` if needed.
+- `nvcc` is not installed system-wide. This is not a blocker for the current prebuilt-wheel inference/runtime gate, but later DeepSpeed/custom CUDA extension compilation may require a CUDA toolkit.
 - Official Monet SFT scripts are written for 8 GPUs with DeepSpeed ZeRO-2; they will not be treated as a drop-in 4 x RTX 3090 recipe.
-- Monet pins `vllm==0.10.0` and uses customized Transformers/vLLM code. Heavy package installation will be done only after checking the server GPU driver and CUDA compatibility.
-- The project will not change package versions casually after bootstrap failures.
+- The project will not change torch/vLLM/Transformers versions casually after runtime verification.
 
 ## Next Action
-Copy the missing V_COT project-root files from the Windows staging tree to `~/work/V_COT` on the GPU server, keeping the verified `third_party/Monet` directory intact. Then run `scripts/01_prepare_restricted_env.sh` and return the complete terminal output before installing Monet requirements or downloading the checkpoint.
+Run `scripts/02_install_monet_runtime.sh`, return the complete terminal output, and do not download the Monet-7B checkpoint or run inference until the pinned runtime stack passes `pip check` and the CUDA tensor test.
 
 ## Update Rule
 After every verified step, update this file with:
