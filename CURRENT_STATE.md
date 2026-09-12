@@ -56,9 +56,13 @@ Verified dependency state:
 - `tabulate==0.10.0` installed with `--no-deps`.
 - `sty==1.0.6` installed with `--no-deps`.
 - `portalocker` has been installed sufficiently for the import chain to advance past `vlmeval/smp/misc.py`.
-- `Levenshtein==0.27.1` has been installed with `--no-deps`.
-- `pip check` now reports that `Levenshtein 0.27.1 requires rapidfuzz`, and `import vlmeval` fails inside `Levenshtein/__init__.py` because `rapidfuzz` is absent.
+- `Levenshtein==0.27.1` installed with `--no-deps`.
+- `RapidFuzz==3.14.5` installed to satisfy Levenshtein under Python 3.10.
+- `pip check` now returns `No broken requirements found.`
 - The `.env` message emitted by `load_env` remains non-fatal and is not the blocker.
+- Full traceback now identifies the next blocker exactly as `ModuleNotFoundError: No module named 'imageio'`.
+- The traceback reaches `vlmeval/dataset/mvbench.py`, which imports `imageio`; this is another top-level dependency pulled in by VLMEvalKit's broad dataset import chain, even though the target benchmark is VStarBench.
+- The pinned VLMEvalKit `requirements.txt` lists `imageio` without a version pin.
 
 Continue minimum-dependency bring-up based on actual traceback only. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
 
@@ -88,7 +92,7 @@ Continue minimum-dependency bring-up based on actual traceback only. Do not inst
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Install a Python-3.10-compatible `RapidFuzz` version required by `Levenshtein==0.27.1`, then run `pip check` and retry `import vlmeval` with full traceback capture. Do not install anything else until that result is inspected.
+Install only `imageio` with `--no-deps`, run `pip check`, then retry `import vlmeval` with full traceback capture. Do not install any further package until that result is inspected.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
