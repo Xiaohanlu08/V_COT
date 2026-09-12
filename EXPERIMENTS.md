@@ -102,6 +102,61 @@ A failed experiment must be recorded as carefully as a successful one. Do not de
 
 ---
 
+## EXP-0002 — VStarBench 20-sample natural latent-trigger pilot
+**Status:** COMPLETED
+
+**Date:** 2026-09-13
+
+**Branch:** `main`
+
+**Script source commits:** `505f0b17590ba0105905f8dee9a671f74639733f` (Python scan) and `58dad2fc9c2d0c980b16ea7ff478e81fbde50f25` (launcher)
+
+**Base checkpoint:** local `models/Monet-7B` from `NOVAglow646/Monet-7B`
+
+**Upstream Monet commit:** `08939998d3d643a73a316e349faa34f420429153`
+
+**VLMEvalKit snapshot:** `open-compass/VLMEvalKit@1e2b2f9934cd5ea05e54b8706ab40b09ec3d3ae3`
+
+**Purpose:** Estimate the natural latent-trigger frequency on a small reproducible VStarBench subset before deciding whether to run the full 191-sample characterization.
+
+**Change from baseline:** Observational raw-token capture only. Generation semantics remain unchanged. No forced tokens and no `allowed_token_ids` constraints.
+
+**Data / benchmark:** `VStarBench`, 20 samples drawn without replacement from 191 total samples.
+
+**Sampling protocol:**
+- `VCOT_N=20`
+- `VCOT_SEED=20260913`
+- selected dataset positions: `[13, 14, 24, 34, 41, 48, 53, 59, 85, 93, 95, 96, 101, 107, 126, 127, 138, 159, 176, 177]`
+
+**Inference settings:**
+- `LATENT_SIZE=10`
+- latent start ID `151666`
+- latent end ID `151667`
+- greedy generation through the pinned VLMEvalKit Qwen2VL/vLLM path
+- no forced-token constraints
+- official Monet evaluation system prompt
+- hardware: V_COT GPU server with RTX 3090 GPUs; exact visible GPU IDs are recorded in the run log rather than the submitted summary
+
+**Results:**
+- samples: 20
+- triggered samples: 8
+- natural trigger rate: `8/20 = 0.40`
+- balanced marker samples: 20/20
+- multi-segment samples: 0/20
+- total latent segments: 8
+- mean generated tokens: 53.1
+- diagnostic heuristic option correct: 14/20
+- diagnostic heuristic option accuracy: 0.70
+- `VSTAR_NATURAL_TRIGGER_SCAN_PASS=True`
+
+**Interpretation:** Natural latent activation is not rare in this pilot: 40% of sampled examples emitted the latent-start token under unforced greedy evaluation. All 20 samples had balanced start/end marker accounting, and every triggered sample contained exactly one detected latent segment; no multi-segment behavior was observed in this subset. The sample size is too small for a precise benchmark-wide estimate: the approximate 95% Wilson interval for an 8/20 trigger proportion is about 0.22–0.61. The 0.70 heuristic option accuracy is only a sanity-check extraction metric and is not the official Monet/VLMEvalKit VStarBench score.
+
+**Conclusion:** KEEP. The natural-trigger signal is strong enough to justify full-dataset characterization before V0. The pilot does not yet establish whether triggering is associated with question category, answer correctness, or output length.
+
+**Next action:** Inspect the per-sample JSONL for triggered vs non-triggered correctness/category/length patterns, then run the same observational scan on all 191 VStarBench samples if no instrumentation anomaly is found. Do not start V0 training yet.
+
+---
+
 ## Experiment Template
 
 ```markdown
