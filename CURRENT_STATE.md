@@ -45,9 +45,11 @@ A filtered audit identified 29 missing direct non-core requirements. A constrain
 After the controlled batch:
 - `pip check` reports only `decord 0.6.0 is not supported on this platform`.
 - This `decord` warning remains a separate video-only compatibility issue because its import succeeds and the target VStarBench is image-only.
-- `import vlmeval` advances to `vlmeval/dataset/foxbench.py` and fails on undeclared `rouge`.
-- The pinned VLMEvalKit `requirements.txt` does not list `rouge`.
+- `rouge==1.0.1` was installed with `--no-deps` after a source-level import audit identified it as the only missing unguarded external module.
+- The top-level `vlmeval` import now advances past `foxbench.py` / `rouge` and reaches the SArena metric path.
+- The current blocker is `ModuleNotFoundError: No module named 'pkg_resources'` raised by `openai-clip` at `site-packages/clip/clip.py`, which imports `from pkg_resources import packaging`.
 - The `.env` warning emitted by `load_env` remains non-fatal.
+- The Transformers `TRANSFORMERS_CACHE` FutureWarning is also non-fatal.
 
 ## Source-Level Import Audit
 A read-only static import-graph audit was completed starting from top-level `vlmeval` import.
@@ -64,21 +66,28 @@ Verified protected stack after the controlled batch:
 - `datasets==5.0.1`
 - `qwen-vl-utils==0.0.14`
 
-Audit results:
+Audit results before installing rouge:
 - 402 local modules are reachable from top-level `vlmeval` import.
-- Exactly one unguarded external module is missing: `rouge`.
-- Blocking source location: `vlmeval/dataset/foxbench.py:12 -> from rouge import Rouge`.
+- Exactly one unguarded external module was missing: `rouge`.
 - Optional/guarded-only missing modules: `anthropic`, `boto3`, `botocore`, `flash_attn`, and `vertexai`.
-- Those five optional modules do not block top-level `import vlmeval` and should not be installed for the VStarBench path unless later required.
-- No Python parse errors were found in the audit.
-- PyPI package `rouge==1.0.1` provides the exact `from rouge import Rouge` API used by `foxbench.py`.
+- No Python parse errors were found.
+
+The subsequent `pkg_resources` failure is not an undeclared third-party module in the VLMEvalKit source tree itself; it is a compatibility failure inside installed `openai-clip`.
+
+## `pkg_resources` Compatibility Diagnosis
+The environment currently has `setuptools==83.0.0`.
+
+Upstream Setuptools removed `pkg_resources` from distributed installations starting in `setuptools==82.0.0`. Therefore `setuptools==83.0.0` no longer provides the module that `openai-clip` expects.
+
+This is a compatibility issue between an older dependency (`openai-clip`) and a newer packaging toolchain, not a Monet model-runtime dependency issue. The least invasive compatibility fix is to pin Setuptools to the last pre-removal generation while leaving the protected Monet/Hugging Face stack untouched.
 
 ## Dependency Strategy
 1. Keep the protected Monet/Hugging Face stack fixed.
-2. Do not install optional cloud/video/FlashAttention dependencies unless they become relevant.
-3. Install only `rouge==1.0.1` with `--no-deps`; its purpose is solely to satisfy the remaining hard import blocker.
-4. Re-run protected-stack verification, `pip check`, and `import vlmeval`.
-5. If `import vlmeval` passes, stop dependency bring-up and move directly to inspecting the exact Monet/VLMEvalKit evaluation integration and raw token-ID capture path for VStarBench.
+2. Do not patch files inside `site-packages/clip` because that would create an untracked local code modification.
+3. Do not install optional cloud/video/FlashAttention dependencies unless later required.
+4. Downgrade only Setuptools from `83.0.0` to `81.0.0`, which predates the `pkg_resources` removal.
+5. Verify `import pkg_resources` and `import clip` directly, then retry top-level `import vlmeval`.
+6. If `vlmeval` imports successfully, stop dependency bring-up and move to exact Monet/VLMEvalKit evaluation integration and raw token-ID capture.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -94,7 +103,9 @@ Audit results:
 - [x] Run filtered/constrained dry-run and verify `PROTECTED PACKAGE ACTIONS = NONE`.
 - [x] Install the filtered missing direct dependencies under constraints.
 - [x] Complete source-level audit for undeclared import-time dependencies.
-- [ ] Install `rouge==1.0.1` and verify `import vlmeval` passes.
+- [x] Install `rouge==1.0.1`; top-level import advances beyond the rouge blocker.
+- [ ] Restore `pkg_resources` compatibility by pinning Setuptools below 82 and verify `clip` import.
+- [ ] Complete controlled VLMEvalKit import bring-up.
 - [ ] Inspect exact Monet/VLMEvalKit evaluation integration and raw token-ID capture path.
 - [ ] Measure natural latent-trigger frequency on a VStarBench subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
@@ -112,7 +123,7 @@ Audit results:
 - vLLM shutdown may emit NCCL/resource-tracker cleanup warnings after successful inference.
 
 ## Next Action
-Install only `rouge==1.0.1` with `--no-deps`, then verify the protected stack remains unchanged, run `pip check`, and retry `import vlmeval` with full traceback capture. Do not install the five optional guarded modules.
+Install only `setuptools==81.0.0`, then verify `pkg_resources` and `clip` import successfully, confirm the protected Monet/Hugging Face package versions remain unchanged, and retry `import vlmeval` with full traceback capture. Do not patch `openai-clip` source and do not install the optional guarded modules.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
