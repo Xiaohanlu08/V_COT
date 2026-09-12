@@ -45,18 +45,16 @@ Observed token IDs exactly matched `[151666, 151666, 151667]` with `LATENT_SIZE=
 Natural latent activation is still not characterized. The next scientific baseline step is a small natural-trigger scan on `VStarBench` without forced tokens.
 
 ## VLMEvalKit Dependency Bring-Up
-A full `pip install -e .` remains intentionally avoided because VLMEvalKit's requirements include broad, unpinned `torch`, `torchvision`, `transformers`, and many benchmark-specific dependencies.
+A full `pip install -e .` remains intentionally avoided because VLMEvalKit's requirements include broad, mostly unpinned dependencies including `torch`, `torchvision`, and `transformers`, plus many dependencies for unrelated benchmarks.
 
-Verified dependency state:
+Verified dependency state so far:
 - Monet-critical packages remain intact.
-- `validators==0.35.0`, `matplotlib==3.10.9` plus its runtime dependencies, `tabulate==0.10.0`, `sty==1.0.6`, `portalocker`, `Levenshtein==0.27.1`, `RapidFuzz==3.14.5`, `imageio`, `decord==0.6.0`, and `timeout-decorator` have been added incrementally without full VLMEvalKit installation.
+- `validators==0.35.0`, `matplotlib==3.10.9` plus its runtime dependencies, `tabulate==0.10.0`, `sty==1.0.6`, `portalocker`, `Levenshtein==0.27.1`, `RapidFuzz==3.14.5`, `imageio`, `decord==0.6.0`, `timeout-decorator`, and `jieba==0.42.1` have been added incrementally without a full VLMEvalKit install.
 - `pip check` has remained clean after each resolved dependency layer unless explicitly noted and fixed.
-- The `.env` message emitted by `load_env` remains non-fatal and is not the blocker.
-- Full traceback now identifies the next blocker exactly as `ModuleNotFoundError: No module named 'jieba'`.
-- The traceback reaches `vlmeval/dataset/foxbench.py`, which imports `jieba`; this is another top-level dependency pulled in by VLMEvalKit's broad dataset import chain even though the current target benchmark is VStarBench.
-- The pinned VLMEvalKit `requirements.txt` specifies `jieba>=0.42.1`.
+- The `.env` message emitted by `load_env` is non-fatal and is not the import blocker.
+- After resolving `jieba`, the next observed import blocker is `ModuleNotFoundError: No module named 'nltk'` from `vlmeval/dataset/foxbench.py`.
 
-Continue minimum-dependency bring-up based on actual traceback only. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
+The one-by-one strategy was chosen initially to protect the already verified Monet runtime and to avoid installing a large set of benchmark-specific packages that VStarBench itself may not need. However, VLMEvalKit's broad top-level import chain is causing many unrelated benchmark dependencies to appear serially. The strategy is therefore changed: perform a read-only batch audit of the entire pinned `requirements.txt` against the current `vcot` environment, including version-specifier checks, before installing anything else. Then install only the audited missing non-core dependencies, while keeping Monet-critical versions fixed.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -67,6 +65,7 @@ Continue minimum-dependency bring-up based on actual traceback only. Do not inst
 - [x] Verify official-style runner patch in both parent and spawned child.
 - [x] Exercise the official Monet latent hidden-state path with deterministic forced-start/end behavior.
 - [x] Place a reproducible VLMEvalKit snapshot and verify VStarBench is present.
+- [ ] Complete batch dependency audit for the pinned VLMEvalKit snapshot without mutating the environment.
 - [ ] Complete minimum VLMEvalKit dependency bring-up without modifying Monet-critical versions.
 - [ ] Measure natural latent-trigger frequency on a VStarBench subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
@@ -84,7 +83,7 @@ Continue minimum-dependency bring-up based on actual traceback only. Do not inst
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Install only `jieba==0.42.1` with `--no-deps`, run `pip check`, then retry `import vlmeval` with full traceback capture. Do not install any further package until that result is inspected.
+Run a read-only full audit of `third_party/VLMEvalKit/requirements.txt` against the active `vcot` environment. Report installed direct requirements, missing direct requirements, version mismatches, and the protected Monet-critical package versions. Also run `pip check` to expose missing transitive dependencies. Do not install `nltk` or any additional package until the audit result is inspected.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
