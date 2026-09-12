@@ -54,10 +54,11 @@ Verified dependency state:
 - `matplotlib==3.10.9` installed with `--no-deps`; its exact missing runtime dependencies (`contourpy`, `cycler`, `fonttools`, `kiwisolver`, `pyparsing`) were then installed with `--no-deps`.
 - `matplotlib` imports successfully (`3.10.9`).
 - `tabulate==0.10.0` installed with `--no-deps`.
-- `pip check` still returns `No broken requirements found.` after the tabulate installation.
-- VLMEvalKit import now advances past `tabulate` and stops at `ModuleNotFoundError: No module named 'sty'`.
+- `sty==1.0.6` installed with `--no-deps`.
+- `pip check` still returns `No broken requirements found.` after the sty installation.
+- The subsequent `import vlmeval` attempt prints `vlmeval import: FAIL` but no exception class/message was captured in the pasted terminal output. Do not guess the next dependency from this incomplete signal.
 
-Continue minimum-dependency bring-up one blocker at a time. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
+Continue minimum-dependency bring-up based on the actual traceback only. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -85,7 +86,7 @@ Continue minimum-dependency bring-up one blocker at a time. Do not install the f
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Install only `sty` with `--no-deps`, run `pip check`, and retry the VLMEvalKit import. Do not install any further package until that result is inspected.
+Capture the full traceback and raw exception metadata from `import vlmeval` without installing anything else. Use `traceback.print_exc()` plus `type(e).__name__` and `repr(e.args)` so the next blocker is identified from evidence rather than guessed.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
