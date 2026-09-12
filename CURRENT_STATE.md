@@ -19,7 +19,7 @@ Establish a reproducible Monet baseline before implementing any new latent-super
 Verified on 2026-09-12:
 - Monet source is present at `~/work/V_COT/third_party/Monet` and HEAD is exactly `08939998d3d643a73a316e349faa34f420429153`.
 - `vcot` Conda environment exists with Python 3.10.21.
-- Server has 10 x RTX 3090, 24 GiB each; driver 570.144; `nvidia-smi` reports CUDA 12.8 capability.
+- Server has 10 x RTX 3090, 24 GiB each; driver 570.144.
 - Verified runtime stack: `torch==2.7.1+cu126`, `torchvision==0.22.1+cu126`, `vllm==0.10.0`, `transformers==4.54.0`, `trl==0.15.2`.
 - CUDA is available and a CUDA tensor test passed.
 - Monet-7B checkpoint is fully downloaded and structurally verified; four safetensors shards total 15.44 GiB, matching the checkpoint index.
@@ -37,25 +37,30 @@ Tokenizer wiring is verified:
 - `</abs_vis_token>` -> `151667`
 - `LATENT_SIZE=10`
 
-A forced-token test successfully generated `[151666, 151666, 151666, 151666]`, but that run did **not** verify the Monet hidden-state path because the required spawn-safe `sitecustomize.py` was absent on the server. The expected `[VCOT_MONET_SITE]` / Monet-runner patch logs were also absent. Therefore that run must not be counted as a successful latent-runtime verification.
+A forced-token test generated `[151666, 151666, 151666, 151666]`, but it does not count as latent-runtime verification because the intended spawn-safe patch file was absent from the server. Therefore it only proves forced token sampling, not Monet hidden-state substitution.
 
-The server check confirmed:
-- `~/work/V_COT/scripts/monet_site/sitecustomize.py` does not exist;
-- `import sitecustomize` fails with `ModuleNotFoundError` under the intended `PYTHONPATH`.
+## Official Patch Clarification
+The pinned Monet README gives a VLMEvalKit patch that copies `monet_gpu_model_runner.py` into a `Monet_models` directory and injects it as `vllm.v1.worker.gpu_model_runner` from a startup hook. The README command names the file `sitecustomized.py`, while its own comment says `sitecustomize.py`; Python's automatic startup hook uses `sitecustomize.py`.
 
-This fully explains why Step 06 could force token 151666 yet still fail to prove that spawned vLLM workers were using Monet's custom `GPUModelRunner`.
+To keep baseline reproduction clean, the next check uses the official README patch body with only this filename correction. It does not use the earlier V_COT-enhanced `sitecustomize.py` implementation.
 
 ## Current Task
-Install the missing `scripts/monet_site/sitecustomize.py`, verify that Python resolves:
-- `sitecustomize.__file__` to `scripts/monet_site/sitecustomize.py`;
-- `vllm.v1.worker.gpu_model_runner.__file__` to `third_party/Monet/inference/vllm/monet_gpu_model_runner.py`.
+Run `scripts/06_official_runner_check.sh`.
 
-Only after this lightweight preflight passes should Step 06 load Monet-7B again.
+This lightweight script:
+- verifies the pinned Monet commit;
+- creates a temporary `Monet_models` directory;
+- copies the official pinned `inference/vllm/monet_gpu_model_runner.py` into it;
+- creates `sitecustomize.py` using the official README patch body, changing only the filename from the README typo;
+- starts both a parent Python process and a `spawn` child process;
+- verifies that both resolve `vllm.v1.worker.gpu_model_runner` to the copied Monet runner;
+- loads no model weights and performs no benchmark inference.
 
-`scripts/06_force_latent_path.sh` has been hardened so it now:
-- exits immediately if `sitecustomize.py` is missing;
-- runs a preflight import check before model loading;
-- asserts that the active vLLM runner comes from the Monet source tree.
+Success requires:
+- `PARENT_runner_file=.../Monet_models/monet_gpu_model_runner.py`;
+- `CHILD_runner_file=.../Monet_models/monet_gpu_model_runner.py`;
+- `CHILD_exitcode=0`;
+- `OFFICIAL_RUNNER_PATCH_PASS=True`.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -63,9 +68,8 @@ Only after this lightweight preflight passes should Step 06 load Monet-7B again.
 - [x] Download and verify Monet-7B checkpoint.
 - [x] Reproduce official-example inference.
 - [x] Verify tokenizer latent special-token IDs.
-- [ ] Install and verify spawn-safe `sitecustomize.py` on the server.
-- [ ] Verify the spawned worker is actually using the Monet custom runner.
-- [ ] Exercise the latent hidden-state path with a deterministic forced-start diagnostic.
+- [ ] Verify official-style runner patch in both parent and spawned child.
+- [ ] Exercise the latent hidden-state path with a deterministic forced-start diagnostic using the verified official patch path.
 - [ ] Observe at least one natural latent-mode activation from the checkpoint, or document its trigger rate on an appropriate benchmark subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
 - [ ] Freeze reproduced baseline with a Git tag.
@@ -81,7 +85,7 @@ Only after this lightweight preflight passes should Step 06 load Monet-7B again.
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Create `scripts/monet_site/sitecustomize.py` on the server, run the lightweight import preflight, and return its output. Do not reload Monet-7B until the preflight proves the Monet runner is active.
+Transfer and run `scripts/06_official_runner_check.sh`. Return the `PARENT_runner_file`, `CHILD_runner_file`, `CHILD_exitcode`, and `OFFICIAL_RUNNER_PATCH_PASS` lines. Do not reload Monet-7B until this lightweight spawned-runner check passes.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
