@@ -16,49 +16,40 @@ cd ~/work/V_COT
 git clone https://github.com/Xiaohanlu08/V_COT.git .
 ```
 
-The repository itself is tiny, so direct GitHub access is acceptable here. Large external assets use mirrors in later steps.
+The V_COT repository itself is tiny. Large external assets use mirrors in later steps.
 
-## 2. Optional: configure Conda mirror
-If your Conda is not already configured to a local/mainland mirror, back up `~/.condarc` first and then use the TUNA mirror configuration below.
+## 2. Mirror policy
+The bootstrap script avoids changing your global Conda configuration. It uses mirrors only for this setup:
 
-```yaml
-channels:
-  - defaults
-show_channel_urls: true
-default_channels:
-  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main
-  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/r
-  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/msys2
-custom_channels:
-  conda-forge: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud
-  pytorch: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud
-```
+- Conda Python environment: TUNA Anaconda `pkgs/main` via `--override-channels`;
+- PyPI packages: TUNA PyPI;
+- Hugging Face checkpoint: `HF_ENDPOINT=https://hf-mirror.net`;
+- Monet source: public GitHub proxy first, official GitHub fallback second.
 
-Then refresh the index:
+The Monet Git SHA is checked after cloning, so the transport mirror does not define the source identity.
 
-```bash
-conda clean -i
-```
-
-Do not overwrite an existing working Conda configuration without backing it up.
+If you already have a working local/institutional mirror and want to override the defaults, stop before running the script and tell us the mirror address instead of editing the script ad hoc.
 
 ## 3. Bootstrap
 Run:
 
 ```bash
 cd ~/work/V_COT
+mkdir -p logs
 chmod +x scripts/bootstrap_3090.sh
 bash scripts/bootstrap_3090.sh 2>&1 | tee logs/bootstrap_console.log
 ```
 
-The script does four important things:
+The script does the following:
 
-1. creates a `vcot` Python 3.10 Conda environment if needed;
+1. creates a `vcot` Python 3.10 Conda environment through the TUNA mirror if it does not exist;
 2. installs Python packages through the TUNA PyPI mirror;
 3. clones Monet, preferring `gh-proxy.com` and falling back to official GitHub, then checks out the exact pinned SHA;
-4. downloads `NOVAglow646/Monet-7B` through `HF_ENDPOINT=https://hf-mirror.net`.
+4. installs Monet's checked-in Python requirements;
+5. downloads `NOVAglow646/Monet-7B` through the Hugging Face mirror;
+6. records a local environment snapshot.
 
-The SHA check is mandatory. A mirror is used only as a transport path; the baseline source identity is still the official Monet commit recorded in `BASELINE.md`.
+The SHA check is mandatory. The baseline source identity is the official Monet commit recorded in `BASELINE.md`.
 
 ## 4. Expected directories after bootstrap
 
@@ -69,6 +60,7 @@ V_COT/
 ├── models/
 │   └── Monet-7B/       # ignored by V_COT Git
 ├── logs/
+│   ├── bootstrap_console.log
 │   └── bootstrap_env.txt
 ├── scripts/
 └── *.md
