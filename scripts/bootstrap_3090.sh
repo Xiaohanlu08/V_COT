@@ -4,8 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MONET_DIR="${ROOT_DIR}/third_party/Monet"
 MODEL_DIR="${ROOT_DIR}/models/Monet-7B"
-MONET_REPO="https://github.com/NOVAglow646/Monet.git"
-MONET_PROXY_REPO="https://gh-proxy.com/https://github.com/NOVAglow646/Monet.git"
 MONET_SHA="08939998d3d643a73a316e349faa34f420429153"
 PIP_INDEX_URL_DEFAULT="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 HF_ENDPOINT_DEFAULT="https://hf-mirror.net"
@@ -27,7 +25,6 @@ if ! command -v conda >/dev/null 2>&1; then
   exit 1
 fi
 
-# Create a dedicated environment using a mainland mirror without modifying ~/.condarc.
 if ! conda env list | awk '{print $1}' | grep -qx 'vcot'; then
   echo '[1/6] Creating conda env: vcot (Python 3.10) through TUNA mirror'
   conda create -y -n vcot python=3.10 --override-channels -c "${CONDA_MAIN_DEFAULT}"
@@ -45,23 +42,34 @@ python -m pip install -i "${PIP_INDEX_URL}" huggingface_hub
 
 printf '\n[3/6] Preparing pinned Monet source\n'
 if [[ ! -d "${MONET_DIR}/.git" ]]; then
-  # Prefer the GitHub proxy. The proxy URL must wrap the full original GitHub URL.
-  if git -c http.version=HTTP/1.1 clone --no-checkout "${MONET_PROXY_REPO}" "${MONET_DIR}"; then
-    echo '[INFO] Monet cloned through gh-proxy.'
-  else
-    echo '[WARN] GitHub proxy failed; falling back to official GitHub over HTTP/1.1.'
+  MONET_URLS=(
+    "https://ghfast.top/https://github.com/NOVAglow646/Monet.git"
+    "https://githubproxy.cc/https://github.com/NOVAglow646/Monet.git"
+    "https://gitclone.com/github.com/NOVAglow646/Monet.git"
+    "https://github.com/NOVAglow646/Monet.git"
+  )
+
+  cloned=0
+  for url in "${MONET_URLS[@]}"; do
+    echo "[INFO] Trying Monet source: ${url}"
     rm -rf "${MONET_DIR}"
-    git -c http.version=HTTP/1.1 clone --no-checkout "${MONET_REPO}" "${MONET_DIR}"
+    if git -c http.version=HTTP/1.1 clone --no-checkout "${url}" "${MONET_DIR}"; then
+      cloned=1
+      break
+    fi
+  done
+
+  if [[ "${cloned}" -ne 1 ]]; then
+    echo '[ERROR] All Monet Git sources failed.' >&2
+    exit 2
   fi
 fi
 
-# Fetch is best-effort because the pinned commit may already be present after clone.
-git -C "${MONET_DIR}" -c http.version=HTTP/1.1 fetch --all --tags --prune || true
 git -C "${MONET_DIR}" checkout --detach "${MONET_SHA}"
 ACTUAL_SHA="$(git -C "${MONET_DIR}" rev-parse HEAD)"
 if [[ "${ACTUAL_SHA}" != "${MONET_SHA}" ]]; then
   echo "[ERROR] Monet SHA mismatch: ${ACTUAL_SHA}" >&2
-  exit 2
+  exit 3
 fi
 echo "[OK] Monet pinned at ${ACTUAL_SHA}"
 
@@ -78,7 +86,7 @@ else
     huggingface-cli download NOVAglow646/Monet-7B --local-dir "${MODEL_DIR}"
   else
     echo '[ERROR] Neither hf nor huggingface-cli is available.' >&2
-    exit 3
+    exit 4
   fi
 fi
 
