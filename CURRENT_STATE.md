@@ -55,9 +55,10 @@ Verified dependency state:
 - `matplotlib` imports successfully (`3.10.9`).
 - `tabulate==0.10.0` installed with `--no-deps`.
 - `sty==1.0.6` installed with `--no-deps`.
-- `pip check` remains clean after these installations.
-- Full traceback now identifies the next blocker exactly as `ModuleNotFoundError: No module named 'portalocker'`.
-- The traceback path is `vlmeval/__init__.py -> smp/__init__.py -> smp/file.py -> smp/misc.py`, where `smp/misc.py` imports `portalocker`.
+- `portalocker` has now been installed sufficiently for the import chain to advance past `vlmeval/smp/misc.py`.
+- The `.env` message emitted by `load_env` is a non-fatal warning in this local import path; the actual import failure occurs later.
+- Full traceback now identifies the next blocker exactly as `ModuleNotFoundError: No module named 'Levenshtein'`.
+- The traceback reaches `vlmeval/dataset/utils/chartx_eval.py`, which imports `Levenshtein`. This is a top-level import pulled in by VLMEvalKit's broad dataset import chain, even though the current target benchmark is VStarBench.
 
 Continue minimum-dependency bring-up based on actual traceback only. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
 
@@ -87,7 +88,7 @@ Continue minimum-dependency bring-up based on actual traceback only. Do not inst
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Install only `portalocker` with `--no-deps`, run `pip check`, then retry `import vlmeval` with full traceback capture. Do not install any further package until that result is inspected.
+Install only `Levenshtein==0.27.1` with `--no-deps`, run `pip check`, then retry `import vlmeval` with full traceback capture. If `pip check` reports a missing dependency of Levenshtein (for example RapidFuzz), stop and inspect that exact result before installing anything else.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
