@@ -26,14 +26,15 @@ Verified on 2026-09-12:
 - direct GitHub access fails with GnuTLS handshake errors.
 - `gh-proxy.com` and `ghfast.top` also fail with GnuTLS handshake errors from this server.
 - `gitclone.com` returned HTTP 502 during the test.
+- the user reports that the Windows staging machine has now been prepared according to the project instructions, including Git setup and local preparation of `V_COT` plus the pinned Monet source. This local staging state is still pending server-side verification after transfer.
 
 Therefore GitHub source transport must be relayed through an Internet-connected machine, while Python packages and model checkpoints should be downloaded directly on the GPU server through the verified mirrors.
 
 No server-side Monet environment, model download, inference result, benchmark result, or modified method has yet been verified.
 
 ## Current Task
-1. Transfer the current `V_COT` repository to `~/work/V_COT` through an Internet-connected machine.
-2. Transfer Monet pinned at commit `08939998d3d643a73a316e349faa34f420429153` to `~/work/V_COT/third_party/Monet`.
+1. Transfer the prepared `V_COT` tree from the Windows staging machine to `~/work/V_COT` on the GPU server.
+2. Verify that Monet exists at `~/work/V_COT/third_party/Monet` and that its HEAD is exactly `08939998d3d643a73a316e349faa34f420429153`.
 3. Run `scripts/01_prepare_restricted_env.sh` on the server.
 4. Inspect GPU driver/CUDA compatibility before installing Monet's heavy requirements.
 
@@ -43,6 +44,7 @@ No server-side Monet environment, model download, inference result, benchmark re
 - [x] Characterize the server network as restricted-overseas rather than fully offline.
 - [x] Verify TUNA PyPI availability from the server.
 - [x] Verify HF mirror availability from the server.
+- [x] Prepare V_COT and pinned Monet on the Windows staging machine (user-reported; pending server verification).
 - [ ] Transfer V_COT source to the server.
 - [ ] Transfer pinned Monet source to `third_party/Monet`.
 - [ ] Create the `vcot` Python 3.10 environment through domestic mirrors.
@@ -76,7 +78,7 @@ Environment bootstrap only; not yet an experiment.
 - The project will not change package versions casually after bootstrap failures.
 
 ## Next Action
-Relay V_COT and the pinned Monet source from an Internet-connected machine to the server. Then run `scripts/01_prepare_restricted_env.sh` and return the complete terminal output before installing Monet requirements or downloading the checkpoint.
+Transfer the locally prepared V_COT tree to the GPU server, verify the Monet commit on the server, then run `scripts/01_prepare_restricted_env.sh` and return the complete terminal output before installing Monet requirements or downloading the checkpoint.
 
 ## Update Rule
 After every verified step, update this file with:
