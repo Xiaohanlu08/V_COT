@@ -124,15 +124,44 @@ heuristic_option_accuracy: 0.70
 VSTAR_NATURAL_TRIGGER_SCAN_PASS=True
 ```
 
-Interpretation:
-- Natural latent activation is common enough in this pilot to justify benchmark-wide characterization.
-- All samples have balanced latent start/end marker accounting.
-- Every triggered sample has one latent segment; no multi-segment behavior was observed in the 20-sample subset.
-- With only 20 samples, the trigger-rate estimate is still imprecise; an approximate 95% Wilson interval for 8/20 is about 0.22–0.61.
-- The 0.70 option accuracy is diagnostic extraction only, not an official Monet/VLMEvalKit VStarBench score.
-- The pilot alone does not establish whether latent triggering is associated with category, correctness, or response length.
+The approximate 95% Wilson interval for 8/20 is about 0.22–0.61. The 0.70 option accuracy is diagnostic extraction only, not an official Monet/VLMEvalKit score. This run is recorded as `EXP-0002`.
 
-This run is recorded as `EXP-0002` in `EXPERIMENTS.md`.
+## 20-Sample Pilot JSONL Inspection — CLEAN, WITH A STRONG EXPLORATORY PATTERN
+The per-sample JSONL was inspected after EXP-0002.
+
+Triggered group (`n=8`):
+```text
+heuristic_correct: 3/8 = 0.375
+mean_generated_tokens: 77.25
+range: 60–106
+categories: direct_attributes 5, relative_position 3
+```
+
+Non-triggered group (`n=12`):
+```text
+heuristic_correct: 11/12 = 0.917
+mean_generated_tokens: 37.00
+range: 17–51
+categories: direct_attributes 9, relative_position 3
+```
+
+Latent mechanics:
+```text
+latent segment lengths: [10, 10, 10, 10, 10, 10, 10, 10]
+unique lengths: [10]
+all 20 samples have balanced start/end markers
+no multi-segment samples
+```
+
+Exploratory category trigger rates in this small subset:
+- `direct_attributes`: 5/14 = 0.357;
+- `relative_position`: 3/6 = 0.500.
+
+Post-hoc exploratory tests on this 20-sample pilot show a strong association between triggering and lower diagnostic option correctness (Fisher exact two-sided `p≈0.018`) and between triggering and longer generated outputs (Mann–Whitney two-sided `p≈1.6e-5`). These are not confirmatory statistics: the sample is small, the analysis is post-hoc, and the correctness measure is only the diagnostic boxed-option extractor.
+
+Crucially, these associations do **not** show that latent reasoning causes errors. Triggering is endogenous to the model and may instead mark harder examples, uncertainty, or longer reasoning trajectories. This pattern is scientifically relevant to V_COT because it argues against treating every naturally emitted latent state as automatically useful supervision. Full-dataset characterization and later causal/interventional tests are required before drawing utility claims.
+
+The JSONL inspection found no instrumentation anomaly, so the same observational protocol is approved for all 191 VStarBench samples.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -148,8 +177,8 @@ This run is recorded as `EXP-0002` in `EXPERIMENTS.md`.
 - [x] Verify VStarBench dataset build and prompt.
 - [x] Verify unforced single-sample natural latent trigger.
 - [x] Run reproducible 20-sample VStarBench natural-trigger pilot.
-- [ ] Inspect the 20-sample JSONL for triggered vs non-triggered correctness/category/length patterns and any instrumentation anomaly.
-- [ ] Expand natural-trigger characterization to all 191 VStarBench samples if the JSONL inspection is clean.
+- [x] Inspect the 20-sample JSONL and verify marker/segment instrumentation is clean.
+- [ ] Expand natural-trigger characterization to all 191 VStarBench samples.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
 - [ ] Freeze reproduced baseline with a Git tag.
 - [ ] Locate and instrument exact latent-state tensors needed for V0 experiments.
@@ -162,7 +191,7 @@ This run is recorded as `EXP-0002` in `EXPERIMENTS.md`.
 - vLLM shutdown may emit NCCL/resource-tracker cleanup warnings after successful inference.
 
 ## Next Action
-Do not start V0 training yet. First inspect `results/natural_trigger/vstar_n20_seed20260913.jsonl` for triggered/non-triggered correctness, category distribution, output length, marker balance, and any malformed latent segment. If clean, run the identical observational protocol on all 191 VStarBench samples to obtain the benchmark-wide natural trigger rate and category-level trigger statistics.
+Run the existing Step 09 observational scan on all 191 VStarBench samples with `VCOT_N=191`, `LATENT_SIZE=10`, the pinned Monet runner, greedy decoding, and no forced-token constraints. Afterward, analyze benchmark-wide trigger rate, marker/segment integrity, trigger rate by category, response-length association, and diagnostic correctness association. Do not interpret triggered-vs-non-triggered accuracy differences causally, and do not start V0 training yet.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
