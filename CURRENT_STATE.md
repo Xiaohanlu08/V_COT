@@ -35,32 +35,46 @@ Natural latent activation is not yet verified:
 Tokenizer wiring is verified:
 - `<abs_vis_token>` -> `151666`
 - `</abs_vis_token>` -> `151667`
-- `LATENT_SIZE=10`
+- standard inference setting tested with `LATENT_SIZE=10`.
 
-A forced-token test generated `[151666, 151666, 151666, 151666]`, but it does not count as latent-runtime verification because the intended spawn-safe patch file was absent from the server. Therefore it only proves forced token sampling, not Monet hidden-state substitution.
+A previous forced-token test generated `[151666, 151666, 151666, 151666]`, but that run did not use the intended startup patch and therefore is not counted as latent-runtime verification.
 
-## Official Patch Clarification
-The pinned Monet README gives a VLMEvalKit patch that copies `monet_gpu_model_runner.py` into a `Monet_models` directory and injects it as `vllm.v1.worker.gpu_model_runner` from a startup hook. The README command names the file `sitecustomized.py`, while its own comment says `sitecustomize.py`; Python's automatic startup hook uses `sitecustomize.py`.
+## Verified Official-Style Runner Patch
+`scripts/06_official_runner_check.sh` passed on 2026-09-12.
 
-To keep baseline reproduction clean, the next check uses the official README patch body with only this filename correction. It does not use the earlier V_COT-enhanced `sitecustomize.py` implementation.
+Using the Monet README patch body with only the `sitecustomized.py` -> `sitecustomize.py` filename correction, both the parent process and a Python `spawn` child resolved the vLLM runner to the copied official Monet runner:
+- `PARENT_runner_file=.../Monet_models/monet_gpu_model_runner.py`
+- `PARENT_runner_class_module=Monet_models.monet_gpu_model_runner`
+- `CHILD_runner_file=.../Monet_models/monet_gpu_model_runner.py`
+- `CHILD_runner_class_module=Monet_models.monet_gpu_model_runner`
+- `CHILD_exitcode=0`
+- `OFFICIAL_RUNNER_PATCH_PASS=True`
+
+The log also printed `Replaced the original vllm gpu_model_runner with the Monet version.` in both parent/spawned-process startup paths. This closes the spawn-patching uncertainty: the official Monet GPUModelRunner can be loaded by the actual spawned Python process.
 
 ## Current Task
-Run `scripts/06_official_runner_check.sh`.
+Run `scripts/07_official_forced_latent_path.sh`.
 
-This lightweight script:
-- verifies the pinned Monet commit;
-- creates a temporary `Monet_models` directory;
-- copies the official pinned `inference/vllm/monet_gpu_model_runner.py` into it;
-- creates `sitecustomize.py` using the official README patch body, changing only the filename from the README typo;
-- starts both a parent Python process and a `spawn` child process;
-- verifies that both resolve `vllm.v1.worker.gpu_model_runner` to the copied Monet runner;
-- loads no model weights and performs no benchmark inference.
+This is an engineering-only latent state-machine test using the verified official-style patch path. It does not modify the Monet runner.
 
-Success requires:
-- `PARENT_runner_file=.../Monet_models/monet_gpu_model_runner.py`;
-- `CHILD_runner_file=.../Monet_models/monet_gpu_model_runner.py`;
-- `CHILD_exitcode=0`;
-- `OFFICIAL_RUNNER_PATCH_PASS=True`.
+Diagnostic settings:
+- `LATENT_START_ID=151666`
+- `LATENT_END_ID=151667`
+- `LATENT_SIZE=2` only for this short diagnostic
+- vLLM sampler is constrained with `allowed_token_ids=[151666]`
+- `max_tokens=3`
+
+Expected behavior if the official Monet latent state machine is active:
+1. token 1 samples `151666`, activating latent state;
+2. token 2 samples `151666` while the runner is active and uses the pending last-layer hidden state as the next-step input embedding;
+3. on token 3, because the latent length has reached 2, the Monet runner rewrites the sampled token to `151667`.
+
+Therefore the expected visible token sequence is exactly:
+`[151666, 151666, 151667]`.
+
+A plain vLLM runner under the same allowed-token constraint would remain `[151666, 151666, 151666]`. Thus observing the forced end token provides visible evidence that the Monet latent state machine executed, while the already verified runner code path implies the hidden-state embedding substitution is exercised between the first and second latent steps.
+
+This diagnostic is not a benchmark setting and must not be used as scientific evidence of natural latent triggering.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -68,8 +82,8 @@ Success requires:
 - [x] Download and verify Monet-7B checkpoint.
 - [x] Reproduce official-example inference.
 - [x] Verify tokenizer latent special-token IDs.
-- [ ] Verify official-style runner patch in both parent and spawned child.
-- [ ] Exercise the latent hidden-state path with a deterministic forced-start diagnostic using the verified official patch path.
+- [x] Verify official-style runner patch in both parent and spawned child.
+- [ ] Exercise the official Monet latent hidden-state path with deterministic forced-start/end behavior.
 - [ ] Observe at least one natural latent-mode activation from the checkpoint, or document its trigger rate on an appropriate benchmark subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
 - [ ] Freeze reproduced baseline with a Git tag.
@@ -85,7 +99,7 @@ Success requires:
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Transfer and run `scripts/06_official_runner_check.sh`. Return the `PARENT_runner_file`, `CHILD_runner_file`, `CHILD_exitcode`, and `OFFICIAL_RUNNER_PATCH_PASS` lines. Do not reload Monet-7B until this lightweight spawned-runner check passes.
+Transfer and run `scripts/07_official_forced_latent_path.sh`. Return the `RUNNER CHECK`, `TOKEN IDS`, `EXPECTATION`, and `OFFICIAL_LATENT_PATH_PASS` sections. Do not begin benchmark evaluation or V0 development until this deterministic official latent-path test passes.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
