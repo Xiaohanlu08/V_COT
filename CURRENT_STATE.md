@@ -50,12 +50,14 @@ A full `pip install -e .` remains intentionally avoided because VLMEvalKit's req
 Verified dependency state:
 - `torch 2.7.1`, `torchvision 0.22.1`, `transformers 4.54.0`, `vllm 0.10.0`, and `trl 0.15.2` remain intact.
 - `cv2` imports successfully and reports version `5.0.0`.
-- Installed only `validators==0.35.0` with `--no-deps` from the TUNA mirror.
-- Installed `matplotlib==3.10.9` with `--no-deps`.
-- As expected for a `--no-deps` install, `pip check` now reports missing Matplotlib runtime dependencies: `contourpy`, `cycler`, `fonttools`, `kiwisolver`, and `pyparsing`.
-- VLMEvalKit import currently stops at `ModuleNotFoundError: No module named 'pyparsing'`.
+- `validators==0.35.0` installed with `--no-deps`.
+- `matplotlib==3.10.9` installed with `--no-deps`.
+- Its exact missing runtime dependencies (`contourpy`, `cycler`, `fonttools`, `kiwisolver`, `pyparsing`) were then installed with `--no-deps`.
+- `matplotlib` now imports successfully (`3.10.9`).
+- `pip check` returns `No broken requirements found.`
+- VLMEvalKit import now advances past Matplotlib and stops at `ModuleNotFoundError: No module named 'tabulate'`.
 
-Continue minimum-dependency bring-up using only the exact missing Matplotlib dependencies reported by `pip check`. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
+Continue minimum-dependency bring-up one blocker at a time. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -83,7 +85,7 @@ Continue minimum-dependency bring-up using only the exact missing Matplotlib dep
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Install only `contourpy`, `cycler`, `fonttools`, `kiwisolver`, and `pyparsing` with `--no-deps`, re-run `pip check`, verify `matplotlib` imports, then retry the VLMEvalKit import. Do not install any further package until that result is inspected.
+Install only `tabulate` with `--no-deps`, run `pip check`, and retry the VLMEvalKit import. Do not install any further package until that result is inspected.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
