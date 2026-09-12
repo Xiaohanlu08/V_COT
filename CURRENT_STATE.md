@@ -85,45 +85,54 @@ max_tokens: 2048
 allowed_token_ids: None
 LATENT_SIZE=10
 ```
-No forced-token constraint was present.
-
-Observed result:
+Observed:
 ```text
 num_generated_tokens: 99
 start_positions: [25]
 end_positions: [35]
 segments: [(25, 35)]
-num_start_tokens: 1
-num_end_tokens: 1
-num_latent_segments: 1
 NATURAL_LATENT_TRIGGER=True
 VSTAR_SINGLE_RAW_TOKEN_PROBE_PASS=True
 ```
-The model's final answer was `\\boxed{A. rubber}`, matching the ground-truth option `A`. The start-to-end position difference is 10, consistent with the configured latent span. Decoded token text inside the latent block is not treated as semantic latent content; the Monet runner substitutes cached last-layer representations as the next-step input embeddings during latent mode.
+This is direct unforced runtime evidence that Monet can naturally enter latent mode on VStarBench. It is recorded as `EXP-0001`.
 
-This is the first direct unforced runtime evidence in V_COT that Monet naturally enters latent mode on VStarBench. It is only one sample and does not establish a benchmark-wide trigger rate.
-
-The run is permanently recorded as `EXP-0001` in `EXPERIMENTS.md`.
-
-## 20-Sample Natural Trigger Pilot — PREPARED, NOT YET RUN
-New scripts:
-- `scripts/09_vstar_natural_trigger_scan.py`
-- `scripts/09_vstar_natural_trigger_scan.sh`
-
-Default protocol:
-- dataset: `VStarBench`;
+## 20-Sample Natural Trigger Pilot — VERIFIED
+`scripts/09_vstar_natural_trigger_scan.py` and `.sh` were executed with:
 - `VCOT_N=20`;
-- deterministic sampling without replacement using `VCOT_SEED=20260913`;
+- `VCOT_SEED=20260913`;
 - `LATENT_SIZE=10`;
-- `temperature=0.0`;
-- no `allowed_token_ids`;
-- same official Monet system prompt and pinned runner;
-- same pinned VLMEvalKit Qwen2VLChat generation path;
-- model is initialized once, then selected samples are evaluated sequentially;
-- per-sample raw token IDs, raw text, start/end positions, latent segments, benchmark index/category, ground truth, and a diagnostic boxed-option extraction are written to JSONL;
-- summary reports triggered sample count, trigger rate, marker balance, total segments, mean output length, and diagnostic option accuracy.
+- greedy decoding (`temperature=0.0`);
+- no forced-token constraints;
+- official Monet system prompt and pinned Monet runner;
+- pinned VLMEvalKit Qwen2VL/vLLM generation path.
 
-The diagnostic option accuracy is not the official Monet/VLMEvalKit benchmark score and must not be reported as such.
+Selected positions:
+```text
+[13, 14, 24, 34, 41, 48, 53, 59, 85, 93, 95, 96, 101, 107, 126, 127, 138, 159, 176, 177]
+```
+
+Observed summary:
+```text
+triggered_samples: 8 / 20
+trigger_rate: 0.40
+balanced_marker_samples: 20 / 20
+multi_segment_samples: 0 / 20
+total_latent_segments: 8
+mean_generated_tokens: 53.1
+heuristic_option_correct_count: 14 / 20
+heuristic_option_accuracy: 0.70
+VSTAR_NATURAL_TRIGGER_SCAN_PASS=True
+```
+
+Interpretation:
+- Natural latent activation is common enough in this pilot to justify benchmark-wide characterization.
+- All samples have balanced latent start/end marker accounting.
+- Every triggered sample has one latent segment; no multi-segment behavior was observed in the 20-sample subset.
+- With only 20 samples, the trigger-rate estimate is still imprecise; an approximate 95% Wilson interval for 8/20 is about 0.22–0.61.
+- The 0.70 option accuracy is diagnostic extraction only, not an official Monet/VLMEvalKit VStarBench score.
+- The pilot alone does not establish whether latent triggering is associated with category, correctness, or response length.
+
+This run is recorded as `EXP-0002` in `EXPERIMENTS.md`.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -137,9 +146,10 @@ The diagnostic option accuracy is not the official Monet/VLMEvalKit benchmark sc
 - [x] Complete controlled VLMEvalKit dependency bring-up.
 - [x] Inspect Monet/VLMEvalKit evaluation path and raw-token capture point.
 - [x] Verify VStarBench dataset build and prompt.
-- [x] Verify unforced single-sample raw-token capture and observe a natural latent trigger.
-- [ ] Run the reproducible 20-sample VStarBench natural-trigger pilot.
-- [ ] Decide whether to expand characterization to all 191 VStarBench samples.
+- [x] Verify unforced single-sample natural latent trigger.
+- [x] Run reproducible 20-sample VStarBench natural-trigger pilot.
+- [ ] Inspect the 20-sample JSONL for triggered vs non-triggered correctness/category/length patterns and any instrumentation anomaly.
+- [ ] Expand natural-trigger characterization to all 191 VStarBench samples if the JSONL inspection is clean.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
 - [ ] Freeze reproduced baseline with a Git tag.
 - [ ] Locate and instrument exact latent-state tensors needed for V0 experiments.
@@ -152,7 +162,7 @@ The diagnostic option accuracy is not the official Monet/VLMEvalKit benchmark sc
 - vLLM shutdown may emit NCCL/resource-tracker cleanup warnings after successful inference.
 
 ## Next Action
-Transfer the Step 09 scripts to the GPU server and run the default 20-sample pilot with `VCOT_N=20`, `VCOT_SEED=20260913`, `LATENT_SIZE=10`, and no forced token constraints. Inspect the final summary and JSONL before expanding to the full 191-sample benchmark. Do not start V0 training yet.
+Do not start V0 training yet. First inspect `results/natural_trigger/vstar_n20_seed20260913.jsonl` for triggered/non-triggered correctness, category distribution, output length, marker balance, and any malformed latent segment. If clean, run the identical observational protocol on all 191 VStarBench samples to obtain the benchmark-wide natural trigger rate and category-level trigger statistics.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
