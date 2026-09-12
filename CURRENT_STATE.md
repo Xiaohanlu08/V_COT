@@ -55,10 +55,11 @@ Verified dependency state:
 - `matplotlib` imports successfully (`3.10.9`).
 - `tabulate==0.10.0` installed with `--no-deps`.
 - `sty==1.0.6` installed with `--no-deps`.
-- `pip check` still returns `No broken requirements found.` after the sty installation.
-- The subsequent `import vlmeval` attempt prints `vlmeval import: FAIL` but no exception class/message was captured in the pasted terminal output. Do not guess the next dependency from this incomplete signal.
+- `pip check` remains clean after these installations.
+- Full traceback now identifies the next blocker exactly as `ModuleNotFoundError: No module named 'portalocker'`.
+- The traceback path is `vlmeval/__init__.py -> smp/__init__.py -> smp/file.py -> smp/misc.py`, where `smp/misc.py` imports `portalocker`.
 
-Continue minimum-dependency bring-up based on the actual traceback only. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
+Continue minimum-dependency bring-up based on actual traceback only. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -86,7 +87,7 @@ Continue minimum-dependency bring-up based on the actual traceback only. Do not 
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Capture the full traceback and raw exception metadata from `import vlmeval` without installing anything else. Use `traceback.print_exc()` plus `type(e).__name__` and `repr(e.args)` so the next blocker is identified from evidence rather than guessed.
+Install only `portalocker` with `--no-deps`, run `pip check`, then retry `import vlmeval` with full traceback capture. Do not install any further package until that result is inspected.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
