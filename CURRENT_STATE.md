@@ -16,7 +16,7 @@ Establish a reproducible Monet baseline before implementing any new latent-super
 - Baseline specification: `BASELINE.md`
 
 ## Last Verified State
-The V_COT project root, the pinned Monet source, the runtime stack, and the Monet-7B checkpoint are now present and verified on the GPU server.
+The V_COT project root, pinned Monet source, runtime, and Monet-7B checkpoint are present and verified on the GPU server.
 
 Verified on 2026-09-12:
 - Monet source is at `~/work/V_COT/third_party/Monet`.
@@ -43,13 +43,21 @@ Verified on 2026-09-12:
 - indexed tensor size and actual shard size both equal 15.44 GiB.
 - local checkpoint directory is `~/work/V_COT/models/Monet-7B` and occupies about 16 GiB on disk.
 
-The runtime and checkpoint gates are therefore complete. The next gate is official-example smoke inference and latent-mode verification.
+The first smoke-inference attempt failed before model loading because the test executed Python from stdin (`python - <<'PY'`). vLLM 0.10.0 switched to the `spawn` multiprocessing method after CUDA initialization; the spawned child process then attempted to re-import the parent program from `<stdin>` and raised `FileNotFoundError: .../Monet/<stdin>`, followed by `RuntimeError: Engine core initialization failed`.
+
+This is an entrypoint/multiprocessing issue, not a Monet checkpoint, CUDA, vLLM-version, or model-memory failure.
+
+The smoke test has now been refactored:
+- `scripts/04_monet_smoke_inference.py` is a real Python entrypoint with an `if __name__ == "__main__":` guard.
+- `scripts/04_monet_smoke_inference.sh` calls that file instead of executing Python from stdin.
+- the shell wrapper explicitly sets `VLLM_WORKER_MULTIPROC_METHOD=spawn`.
+- unless the user sets `CUDA_VISIBLE_DEVICES`, the wrapper automatically selects the physical GPU with the lowest currently reported memory usage.
 
 ## Current Task
-1. Run `scripts/04_monet_smoke_inference.sh` on a single RTX 3090, physical GPU 0 by default.
-2. Verify that the official Monet example produces a non-empty output.
-3. Record the raw output, cleaned output, and whether `<abs_vis_token>` and `</abs_vis_token>` appear.
-4. If a single 24 GiB 3090 cannot initialize vLLM because of memory pressure, do not alter the runtime stack; retry the same smoke test with 2-GPU tensor parallelism using a controlled script change.
+1. Transfer the revised `scripts/04_monet_smoke_inference.sh` and new `scripts/04_monet_smoke_inference.py` to the GPU server.
+2. Normalize shell line endings if transferred through Windows.
+3. Re-run the official-example smoke inference.
+4. Record the raw model output and whether `<abs_vis_token> ... </abs_vis_token>` appears, confirming latent-mode behavior.
 
 ## Next Milestones
 - [x] Select the exact Monet implementation to use as the baseline.
@@ -73,9 +81,8 @@ The runtime and checkpoint gates are therefore complete. The next gate is offici
 
 ## Hardware Plan
 - The physical server has 10 x RTX 3090.
-- Development/debug/V0 pilot will initially use GPUs 0-3 as a 4 x RTX 3090 allocation.
-- The first Monet smoke inference uses one physical RTX 3090, GPU 0 by default.
-- Avoid GPU 7 while the previously observed external process remains active.
+- Development/debug/V0 pilot will initially use a 4 x RTX 3090 allocation when needed.
+- Smoke inference uses one RTX 3090 and now automatically selects the least-used physical GPU by default.
 - Full-scale or RL/VLPO experiments may later use more 3090s or H200 when justified by memory/runtime.
 
 This is a resource-allocation decision, not a change to the scientific goal.
@@ -96,7 +103,7 @@ Official-example Monet smoke inference. This is still baseline reproduction, not
 - The project will not change torch/vLLM/Transformers versions casually after runtime verification.
 
 ## Next Action
-Run `scripts/04_monet_smoke_inference.sh` and return the final initialization/generation output, especially `RAW OUTPUT`, `CLEANED OUTPUT`, and `LATENT CHECK`. Do not begin benchmark evaluation or V0 development until this smoke inference is verified.
+Transfer the revised smoke-test shell wrapper and Python entrypoint, then rerun `scripts/04_monet_smoke_inference.sh`. Do not modify runtime package versions. If the next failure is GPU OOM, switch to a currently free GPU or a 2-GPU tensor-parallel smoke test without changing the software stack.
 
 ## Update Rule
 After every verified step, update this file with:
