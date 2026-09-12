@@ -51,11 +51,11 @@ Verified dependency state:
 - `torch 2.7.1`, `torchvision 0.22.1`, `transformers 4.54.0`, `vllm 0.10.0`, and `trl 0.15.2` remain intact.
 - `cv2` imports successfully and reports version `5.0.0`.
 - `validators==0.35.0` installed with `--no-deps`.
-- `matplotlib==3.10.9` installed with `--no-deps`.
-- Its exact missing runtime dependencies (`contourpy`, `cycler`, `fonttools`, `kiwisolver`, `pyparsing`) were then installed with `--no-deps`.
-- `matplotlib` now imports successfully (`3.10.9`).
-- `pip check` returns `No broken requirements found.`
-- VLMEvalKit import now advances past Matplotlib and stops at `ModuleNotFoundError: No module named 'tabulate'`.
+- `matplotlib==3.10.9` installed with `--no-deps`; its exact missing runtime dependencies (`contourpy`, `cycler`, `fonttools`, `kiwisolver`, `pyparsing`) were then installed with `--no-deps`.
+- `matplotlib` imports successfully (`3.10.9`).
+- `tabulate==0.10.0` installed with `--no-deps`.
+- `pip check` still returns `No broken requirements found.` after the tabulate installation.
+- VLMEvalKit import now advances past `tabulate` and stops at `ModuleNotFoundError: No module named 'sty'`.
 
 Continue minimum-dependency bring-up one blocker at a time. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
 
@@ -85,7 +85,7 @@ Continue minimum-dependency bring-up one blocker at a time. Do not install the f
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Install only `tabulate` with `--no-deps`, run `pip check`, and retry the VLMEvalKit import. Do not install any further package until that result is inspected.
+Install only `sty` with `--no-deps`, run `pip check`, and retry the VLMEvalKit import. Do not install any further package until that result is inspected.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
