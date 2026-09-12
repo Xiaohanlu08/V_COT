@@ -36,13 +36,16 @@ Verified on 2026-09-12:
   - `transformers==4.54.0`
   - `trl==0.15.2`
 - PyTorch CUDA build is 12.6, CUDA is available, all 10 GPUs are visible, and a CUDA tensor operation passed on RTX 3090 (compute capability 8.6).
+- the first Monet-7B checkpoint download attempt partially succeeded but `huggingface_hub` aborted with `FileMetadataError: Distant resource does not have a Content-Length.` followed by `LocalEntryNotFoundError`.
+- several small metadata files were already downloaded successfully before the failure.
 
-The runtime gate is therefore complete. The next gate is checkpoint download and official-example inference.
+The download failure is a mirror/`huggingface_hub` metadata-HEAD compatibility issue, not a CUDA/runtime failure. The active `scripts/03_download_monet7b.sh` now bypasses `hf download` and performs direct resumable HTTP GET requests through `hf-mirror.net`, then verifies the checkpoint shard layout from `model.safetensors.index.json`.
 
 ## Current Task
-1. Run `scripts/03_download_monet7b.sh` to download `NOVAglow646/Monet-7B` through `hf-mirror.net` and verify the local checkpoint structure.
-2. After successful download, run `scripts/04_monet_smoke_inference.sh` on a single RTX 3090 (physical GPU 0 by default).
-3. Record the raw model output and whether `<abs_vis_token> ... </abs_vis_token>` appears, confirming latent-mode behavior.
+1. Transfer the revised `scripts/03_download_monet7b.sh` to the server.
+2. Re-run the checkpoint download. Existing completed files will be kept, and missing files/weight shards will be downloaded with direct GET requests.
+3. After structural verification succeeds, run `scripts/04_monet_smoke_inference.sh` on a single RTX 3090.
+4. Record the raw model output and whether `<abs_vis_token> ... </abs_vis_token>` appears, confirming latent-mode behavior.
 
 ## Next Milestones
 - [x] Select the exact Monet implementation to use as the baseline.
@@ -82,13 +85,14 @@ Baseline checkpoint download and official-example smoke inference. This is still
 ## Known Issues
 - Direct GitHub access from the target server is unavailable; GitHub must not be part of the server-side bootstrap path.
 - Windows GitHub access is also intermittent; when synchronization fails, current scripts can be handed off directly as files while GitHub remains the authoritative project record.
+- `huggingface_hub` can fail against the current mirror because the mirror/proxy may omit `Content-Length` from HEAD metadata responses. Direct GET downloads are the current workaround; do not downgrade the verified runtime stack for this network-layer issue.
 - Windows-to-Linux transfer previously converted shell scripts to CRLF; `.gitattributes` enforces LF for shell scripts, and transferred scripts should still be normalized with `sed -i 's/\r$//'` before execution when necessary.
 - `nvcc` is not installed system-wide. This is not a blocker for inference, but later DeepSpeed/custom CUDA extension compilation may require a CUDA toolkit.
 - Official Monet SFT scripts are written for 8 GPUs with DeepSpeed ZeRO-2; they will not be treated as a drop-in 4 x RTX 3090 recipe.
 - The project will not change torch/vLLM/Transformers versions casually after runtime verification.
 
 ## Next Action
-Download Monet-7B with `scripts/03_download_monet7b.sh`. Do not start benchmark evaluation yet. After structural verification succeeds, run `scripts/04_monet_smoke_inference.sh` and return the raw output plus latent-token check.
+Replace the server copy of `scripts/03_download_monet7b.sh` with the revised direct-GET version and run it again. Do not delete the partially downloaded model directory; completed files should be reused. After checkpoint verification succeeds, run `scripts/04_monet_smoke_inference.sh` and return the raw output plus latent-token check.
 
 ## Update Rule
 After every verified step, update this file with:
