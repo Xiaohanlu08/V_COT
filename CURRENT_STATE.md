@@ -45,16 +45,16 @@ Observed token IDs exactly matched `[151666, 151666, 151667]` with `LATENT_SIZE=
 Natural latent activation is still not characterized. The next scientific baseline step is a small natural-trigger scan on `VStarBench` without forced tokens.
 
 ## VLMEvalKit Dependency Audit
-A full `pip install -e .` / `pip install -r requirements.txt` remains intentionally avoided because VLMEvalKit's requirements are broad and mostly unpinned, and include Monet-critical packages such as `torch`, `torchvision`, and `transformers` plus many dependencies for unrelated benchmarks.
+A full `pip install -e .` / unconstrained `pip install -r requirements.txt` remains prohibited because the pinned VLMEvalKit requirements are broad and mostly unpinned.
 
-Verified protected stack remains unchanged:
+Verified protected Monet stack remains unchanged:
 - `torch==2.7.1`
 - `torchvision==0.22.1`
 - `transformers==4.54.0`
 - `trl==0.15.2`
 - `vllm==0.10.0`
 
-Incrementally added without full VLMEvalKit installation:
+Incrementally added without a full VLMEvalKit install:
 - `validators==0.35.0`
 - `matplotlib==3.10.9` plus required runtime dependencies
 - `tabulate==0.10.0`
@@ -67,24 +67,34 @@ Incrementally added without full VLMEvalKit installation:
 - `timeout-decorator`
 - `jieba==0.42.1`
 
-Read-only audit of the pinned VLMEvalKit `requirements.txt` is complete:
+Read-only direct audit of the pinned VLMEvalKit `requirements.txt`:
 - 32 direct requirements currently satisfied.
-- 29 direct requirements are still missing: `anls`, `antlr4-python3-runtime`, `apted`, `bert_score`, `cairosvg`, `colormath`, `distance`, `editdistance`, `google-genai`, `gradio`, `ipdb`, `json_repair`, `lpips`, `lxml`, `math-verify`, `nltk`, `num2words`, `omegaconf`, `openai-clip`, `openpyxl`, `pdf2image`, `polygon3`, `scikit-image`, `scikit-learn`, `sentence_transformers`, `timm`, `torchmetrics`, `xlsxwriter`, and `zss`.
+- 29 direct requirements still missing: `anls`, `antlr4-python3-runtime`, `apted`, `bert_score`, `cairosvg`, `colormath`, `distance`, `editdistance`, `google-genai`, `gradio`, `ipdb`, `json_repair`, `lpips`, `lxml`, `math-verify`, `nltk`, `num2words`, `omegaconf`, `openai-clip`, `openpyxl`, `pdf2image`, `polygon3`, `scikit-image`, `scikit-learn`, `sentence_transformers`, `timm`, `torchmetrics`, `xlsxwriter`, and `zss`.
 - One direct version mismatch: pinned requirement `pylatexenc==2.10`, installed `pylatexenc==2.11`.
-- `dotenv` is effectively provided by `python-dotenv==1.2.3`.
-- `opencv-python>=4.7.0.72` is effectively provided by `opencv-python-headless==5.0.0.93` / importable `cv2`.
-- `pip check` now reports `decord 0.6.0 is not supported on this platform`. This is recorded separately from missing requirements; `import vlmeval` has already progressed beyond the `decord` import, and VStarBench itself is image-only.
-- Before the batch audit, the next serial top-level import blocker was `nltk`, but further one-by-one installation is paused.
+- `dotenv` is functionally provided by `python-dotenv==1.2.3`; do not install the separate `dotenv` distribution unless demonstrated necessary.
+- `opencv-python>=4.7.0.72` is functionally provided by `opencv-python-headless==5.0.0.93` / importable `cv2`; do not install a second OpenCV distribution.
+- `pip check` reports `decord 0.6.0 is not supported on this platform`; `import decord` itself succeeded sufficiently for VLMEvalKit to progress beyond that top-level import, and VStarBench is image-only. Keep this as a separate video-only issue.
+
+## Resolver Dry-Run Result
+A full unconstrained resolver dry-run for the pinned VLMEvalKit `requirements.txt` planned 76 package actions. It is unsafe to execute as-is.
+
+Critical finding:
+- It would upgrade `transformers` from the verified `4.54.0` to `5.17.0`.
+- It would also plan `huggingface_hub==1.31.0` and `tokenizers==0.23.2`, moving the Hugging Face stack away from the verified Monet environment.
+- It would install `opencv-python==5.0.0.93` even though `opencv-python-headless==5.0.0.93` already provides `cv2`.
+- It would install the separate `dotenv==0.9.9` despite `python-dotenv==1.2.3` already providing the relevant module.
+- It would downgrade `pylatexenc` from `2.11` to `2.10` solely because of the broad pinned requirements file.
+
+Therefore the full VLMEvalKit requirements file must not be installed directly in `vcot`.
 
 ## Dependency Strategy
-The original one-by-one strategy was used to protect the verified Monet runtime and avoid accidental upgrades of `torch`, `torchvision`, `transformers`, `vllm`, or `trl`. Because VLMEvalKit imports many unrelated benchmark modules at top level, serial blocker chasing is inefficient.
-
-New strategy:
-1. Keep the protected Monet stack fixed.
-2. Use pip resolver dry-run only to inspect what a full VLMEvalKit install would attempt to add/change; do not mutate the environment.
-3. From that plan, batch-install only missing non-core dependencies with controlled versions and `--no-deps` where appropriate.
-4. Treat the `decord` platform warning as a separate video-only compatibility issue unless it becomes relevant to the selected image benchmark.
-5. Re-run `import vlmeval`; only then move to VStarBench natural-trigger work.
+Use a filtered, constrained batch installation instead of either full requirements installation or serial one-by-one blocker chasing:
+1. Build a temporary requirements file containing only the 29 actually missing direct non-core dependencies.
+2. Exclude `torch`, `torchvision`, `transformers`, `vllm`, `trl`, `opencv-python`, `dotenv`, and the currently non-blocking `pylatexenc` downgrade from the installation target.
+3. Apply constraints that freeze the verified Monet stack and `huggingface_hub==0.36.2`.
+4. First perform a second dry-run on this filtered/constrained set. If any protected package is still scheduled to change, do not install.
+5. If the constrained dry-run is clean, install the same filtered set in one batch with normal dependency resolution under those constraints.
+6. Re-run `import vlmeval` and only address any remaining import-time blocker after the controlled batch installation.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -96,7 +106,8 @@ New strategy:
 - [x] Exercise the official Monet latent hidden-state path with deterministic forced-start/end behavior.
 - [x] Place a reproducible VLMEvalKit snapshot and verify VStarBench is present.
 - [x] Complete read-only direct dependency audit for the pinned VLMEvalKit snapshot.
-- [ ] Inspect resolver dry-run and ensure protected Monet packages would not be changed.
+- [x] Inspect the full resolver dry-run and confirm that an unconstrained install would modify protected Monet dependencies.
+- [ ] Run filtered/constrained resolver dry-run for the 29 missing non-core dependencies.
 - [ ] Complete controlled VLMEvalKit dependency bring-up.
 - [ ] Measure natural latent-trigger frequency on a VStarBench subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
@@ -110,12 +121,12 @@ New strategy:
 - Windows-to-Linux transfers may convert LF to CRLF; normalize transferred shell scripts before execution.
 - `huggingface_hub` HEAD metadata calls are incompatible with the current HF mirror for the Monet checkpoint; direct resumable GET is the verified workaround.
 - `nvcc` is not installed system-wide.
-- `decord==0.6.0` currently triggers a `pip check` platform-support warning even though the Python import chain has progressed past it; do not treat `pip check` cleanliness as the sole gate for VStarBench.
+- `decord==0.6.0` currently triggers a `pip check` platform-support warning even though its Python import succeeds; do not treat `pip check` cleanliness as the sole gate for VStarBench.
 - vLLM shutdown may emit NCCL/resource-tracker warnings after successful inference; treat them as cleanup warnings unless they cause reproducible resource accumulation.
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Run a pip resolver dry-run for the pinned VLMEvalKit `requirements.txt`, write its JSON report to `/tmp/vlmeval_dryrun.json`, and summarize any planned action involving protected Monet packages (`torch`, `torchvision`, `transformers`, `vllm`, `trl`) before installing anything else.
+Create a filtered requirements file containing only the 29 missing direct non-core VLMEvalKit dependencies and a constraints file freezing the verified Monet stack plus `huggingface_hub==0.36.2`. Run `pip install --dry-run` on that filtered/constrained set and inspect the JSON report for any planned action involving protected packages before performing any real installation.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
