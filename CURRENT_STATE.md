@@ -26,15 +26,17 @@ Verified on 2026-09-12:
 - direct GitHub access fails with GnuTLS handshake errors.
 - `gh-proxy.com` and `ghfast.top` also fail with GnuTLS handshake errors from this server.
 - `gitclone.com` returned HTTP 502 during the test.
-- the user reports that the Windows staging machine has now been prepared according to the project instructions, including Git setup and local preparation of `V_COT` plus the pinned Monet source. This local staging state is still pending server-side verification after transfer.
+- Monet source has been transferred to the GPU server at `~/work/V_COT/third_party/Monet`.
+- server-side verification confirms Monet HEAD is exactly `08939998d3d643a73a316e349faa34f420429153`.
+- however, the V_COT project root files were not transferred: the server root currently contains only `third_party/`, so `scripts/01_prepare_restricted_env.sh` and the project anchor files are missing on the server.
 
-Therefore GitHub source transport must be relayed through an Internet-connected machine, while Python packages and model checkpoints should be downloaded directly on the GPU server through the verified mirrors.
+Therefore GitHub source transport must continue to be relayed through an Internet-connected machine, while Python packages and model checkpoints should be downloaded directly on the GPU server through the verified mirrors.
 
-No server-side Monet environment, model download, inference result, benchmark result, or modified method has yet been verified.
+No server-side Monet Python environment, model download, inference result, benchmark result, or modified method has yet been verified.
 
 ## Current Task
-1. Transfer the prepared `V_COT` tree from the Windows staging machine to `~/work/V_COT` on the GPU server.
-2. Verify that Monet exists at `~/work/V_COT/third_party/Monet` and that its HEAD is exactly `08939998d3d643a73a316e349faa34f420429153`.
+1. Transfer the missing V_COT project-root files from the Windows staging copy to `~/work/V_COT` without disturbing the already verified `third_party/Monet` tree.
+2. Verify that `scripts/01_prepare_restricted_env.sh`, `PROJECT_GOAL.md`, `CURRENT_STATE.md`, `DECISIONS.md`, `EXPERIMENTS.md`, and `BASELINE.md` exist on the server.
 3. Run `scripts/01_prepare_restricted_env.sh` on the server.
 4. Inspect GPU driver/CUDA compatibility before installing Monet's heavy requirements.
 
@@ -44,9 +46,8 @@ No server-side Monet environment, model download, inference result, benchmark re
 - [x] Characterize the server network as restricted-overseas rather than fully offline.
 - [x] Verify TUNA PyPI availability from the server.
 - [x] Verify HF mirror availability from the server.
-- [x] Prepare V_COT and pinned Monet on the Windows staging machine (user-reported; pending server verification).
-- [ ] Transfer V_COT source to the server.
-- [ ] Transfer pinned Monet source to `third_party/Monet`.
+- [x] Transfer pinned Monet source to `third_party/Monet` and verify its SHA on the server.
+- [ ] Transfer the V_COT project-root files to the server.
 - [ ] Create the `vcot` Python 3.10 environment through domestic mirrors.
 - [ ] Verify GPU driver/CUDA compatibility for the Monet/vLLM dependency set.
 - [ ] Install the pinned Monet requirements.
@@ -73,12 +74,13 @@ Environment bootstrap only; not yet an experiment.
 
 ## Known Issues
 - Direct GitHub access from the target server is unavailable; GitHub must not be part of the server-side bootstrap path.
+- The V_COT project root and Monet source were transferred separately; only Monet is currently present and verified on the server.
 - Official Monet SFT scripts are written for 8 GPUs with DeepSpeed ZeRO-2; they will not be treated as a drop-in 4 x RTX 3090 recipe.
 - Monet pins `vllm==0.10.0` and uses customized Transformers/vLLM code. Heavy package installation will be done only after checking the server GPU driver and CUDA compatibility.
 - The project will not change package versions casually after bootstrap failures.
 
 ## Next Action
-Transfer the locally prepared V_COT tree to the GPU server, verify the Monet commit on the server, then run `scripts/01_prepare_restricted_env.sh` and return the complete terminal output before installing Monet requirements or downloading the checkpoint.
+Copy the missing V_COT project-root files from the Windows staging tree to `~/work/V_COT` on the GPU server, keeping the verified `third_party/Monet` directory intact. Then run `scripts/01_prepare_restricted_env.sh` and return the complete terminal output before installing Monet requirements or downloading the checkpoint.
 
 ## Update Rule
 After every verified step, update this file with:
