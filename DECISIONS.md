@@ -70,5 +70,38 @@ This file records project-level decisions so that rejected ideas are not acciden
 
 ---
 
+## D007 — Pin the Monet upstream baseline
+**Status:** ACTIVE
+
+**Decision:** Use `NOVAglow646/Monet` at commit `08939998d3d643a73a316e349faa34f420429153` as the immutable upstream baseline source for the first reproduction cycle. Use `NOVAglow646/Monet-7B` as the first official checkpoint to reproduce inference.
+
+**Reason:** A fixed upstream SHA prevents later repository changes from silently altering the baseline and makes every subsequent patch attributable to a known source state.
+
+**Revisit condition:** Only if the pinned commit is demonstrably broken for reproduction, or a later official commit fixes a blocking issue. Any change requires a new numbered decision and must record the old and new SHAs.
+
+---
+
+## D008 — Use 3090 for development and reserve H200 for justified scale
+**Status:** ACTIVE
+
+**Decision:** Use the available 4 x RTX 3090 system for baseline inference, latent-state inspection, three-view analysis, and V0 pilot development. Reserve H200-class hardware for full-scale experiments, multi-seed validation, or VLPO/RL workloads when 3090 memory/runtime is no longer efficient.
+
+**Reason:** The first research questions can be falsified or validated without paying the cost of large-scale H200 runs. The official Monet SFT recipe uses 8 GPUs and ZeRO-2, so a 4 x 3090 training recipe will be treated as an adapted development configuration rather than silently labeled as the official recipe.
+
+**Revisit condition:** Move an earlier stage to H200 only after a measured memory/runtime blocker is recorded.
+
+---
+
+## D009 — Prefer mirrors for large external downloads
+**Status:** ACTIVE
+
+**Decision:** Prefer mainland-friendly mirrors for large package/model/source downloads when source identity can still be verified. Current defaults are TUNA for PyPI/Conda, `hf-mirror.net` through `HF_ENDPOINT` for Hugging Face assets, and a GitHub download proxy only as a transport fallback for the public Monet clone.
+
+**Reason:** Server international bandwidth is limited. Mirror use must not weaken reproducibility: the Monet Git SHA and model repository identity remain authoritative.
+
+**Revisit condition:** Change mirrors if availability or integrity becomes unreliable. Never commit credentials or tokens to the repository.
+
+---
+
 ## Decision Protocol
-Any future change that alters the scientific question, base framework, major loss formulation, evaluation criterion, or stage order must add a new numbered decision here. Do not silently overwrite an older decision; append a new entry that supersedes it and explain why.
+Any future change that alters the scientific question, base framework, major loss formulation, evaluation criterion, hardware policy, pinned upstream source, or stage order must add a new numbered decision here. Do not silently overwrite an older decision; append a new entry that supersedes it and explain why.
