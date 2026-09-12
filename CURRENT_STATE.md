@@ -24,12 +24,10 @@ Verified on 2026-09-12:
 - Verified runtime stack: `torch==2.7.1+cu126`, `torchvision==0.22.1+cu126`, `vllm==0.10.0`, `transformers==4.54.0`, `trl==0.15.2`.
 - CUDA is available and a CUDA tensor test passed.
 - Monet-7B checkpoint is fully downloaded and structurally verified; four safetensors shards total 15.44 GiB, matching the checkpoint index.
-- The pinned VLMEvalKit snapshot is extracted at `~/work/V_COT/third_party/VLMEvalKit`.
-- Its tree contains `README.md`, `run.py`, `setup.py`, `requirements.txt`, and `vlmeval/`.
-- `vlmeval/dataset/image_mcq.py` contains the `VStarBench` dataset entry and MD5 at lines 116 and 185 in this snapshot.
+- The pinned VLMEvalKit snapshot is extracted at `~/work/V_COT/third_party/VLMEvalKit` and contains the `VStarBench` dataset entry.
 
 ## Verified Baseline Inference
-The official Monet example runs successfully and returns the correct answer (`\\boxed{C}`). This marks official-example inference as reproduced.
+The official Monet example runs successfully and returns the correct answer (`\\boxed{C}`).
 
 ## Verified Token Wiring
 - `<abs_vis_token>` -> `151666`
@@ -37,43 +35,28 @@ The official Monet example runs successfully and returns the correct answer (`\\
 - standard inference setting tested with `LATENT_SIZE=10`.
 
 ## Verified Official-Style Runner Patch
-`scripts/06_official_runner_check.sh` passed on 2026-09-12.
-
-Using the Monet README patch body with only the `sitecustomized.py` -> `sitecustomize.py` filename correction, both the parent process and a Python `spawn` child resolved the vLLM runner to the copied official Monet runner:
-- `PARENT_runner_file=.../Monet_models/monet_gpu_model_runner.py`
-- `CHILD_runner_file=.../Monet_models/monet_gpu_model_runner.py`
-- `CHILD_exitcode=0`
-- `OFFICIAL_RUNNER_PATCH_PASS=True`
+`scripts/06_official_runner_check.sh` passed on 2026-09-12 in both parent and spawned child processes.
 
 ## Verified Official Monet Latent Runtime Path
 `scripts/07_official_forced_latent_path.sh` passed on 2026-09-12.
-
-Engineering-only diagnostic settings:
-- `LATENT_START_ID=151666`
-- `LATENT_END_ID=151667`
-- `LATENT_SIZE=2`
-- sampler constrained with `allowed_token_ids=[151666]`
-- `max_tokens=3`
-
-Observed:
-- runner initialization: `start_id=151666 end_id=151667, latent_size=2`
-- expected token IDs: `[151666, 151666, 151667]`
-- observed token IDs: `[151666, 151666, 151667]`
-- `OFFICIAL_LATENT_PATH_PASS=True`
-
-This verifies the official Monet latent state machine under the pinned runtime. This forced-token diagnostic is engineering verification only and is not benchmark evidence or evidence of natural trigger frequency.
+Observed token IDs exactly matched `[151666, 151666, 151667]` with `LATENT_SIZE=2`, confirming the official Monet latent state machine is operational under the pinned runtime. This remains an engineering-only diagnostic, not benchmark evidence.
 
 ## Natural Latent-Trigger Status
-Natural latent activation is still not characterized. The unmodified official example did not emit `<abs_vis_token>`, and explicitly asking the model to begin with the token also did not make it emit naturally. These examples are insufficient to infer natural trigger frequency.
+Natural latent activation is still not characterized. The next scientific baseline step is a small natural-trigger scan on `VStarBench` without forced tokens.
 
-The next scientific baseline step is a small natural-trigger scan on `VStarBench` without forced tokens.
+## VLMEvalKit Dependency Bring-Up
+A full `pip install -e .` remains intentionally avoided because VLMEvalKit's requirements include broad, unpinned `torch`, `torchvision`, `transformers`, and many benchmark-specific dependencies.
 
-## Dependency Safety Check Before VLMEvalKit Installation
-Do not run `pip install -e .` yet.
+Read-only audit result:
+- `torch 2.7.1`, `torchvision 0.22.1`, `transformers 4.54.0`, `vllm 0.10.0`, and `trl 0.15.2` remain intact.
+- `pip check` reports no broken requirements.
+- `cv2` imports successfully and reports version `5.0.0`; absence of the `opencv-python` distribution name is not currently a blocker.
+- First VLMEvalKit import blocker was `validators`.
+- Installed only `validators==0.35.0` with `--no-deps` from the TUNA mirror.
+- After that installation, `pip check` still reports no broken requirements.
+- The next import blocker is now `ModuleNotFoundError: No module named 'matplotlib'`.
 
-The pinned VLMEvalKit `requirements.txt` contains broad, unpinned dependencies including `torch`, `torchvision`, and `transformers`, plus many optional benchmark packages. Its `setup.py` installs the entire `requirements.txt` list. Therefore a full editable install could alter the already verified Monet runtime or introduce unnecessary dependencies for a VStar-only trigger scan.
-
-The next action is a read-only dependency audit inside the existing `vcot` environment. After that, install only the minimum missing packages required for VStar/VLMEvalKit import, while explicitly preserving the Monet-critical versions.
+Continue minimum-dependency bring-up one package at a time. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -84,7 +67,7 @@ The next action is a read-only dependency audit inside the existing `vcot` envir
 - [x] Verify official-style runner patch in both parent and spawned child.
 - [x] Exercise the official Monet latent hidden-state path with deterministic forced-start/end behavior.
 - [x] Place a reproducible VLMEvalKit snapshot and verify VStarBench is present.
-- [ ] Audit VLMEvalKit dependencies without mutating the environment.
+- [ ] Complete minimum VLMEvalKit dependency bring-up without modifying Monet-critical versions.
 - [ ] Measure natural latent-trigger frequency on a VStarBench subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
 - [ ] Freeze reproduced baseline with a Git tag.
@@ -96,12 +79,12 @@ The next action is a read-only dependency audit inside the existing `vcot` envir
 - The VLMEvalKit snapshot was transferred as an archive, so its directory does not contain `.git`; the selected snapshot commit is documented in V_COT instead.
 - Windows-to-Linux transfers may convert LF to CRLF; normalize transferred shell scripts before execution.
 - `huggingface_hub` HEAD metadata calls are incompatible with the current HF mirror for the Monet checkpoint; direct resumable GET is the verified workaround.
-- `nvcc` is not installed system-wide. This is not a blocker for inference but may matter later for training extensions.
+- `nvcc` is not installed system-wide.
 - vLLM shutdown may emit NCCL/resource-tracker warnings after successful inference; treat them as cleanup warnings unless they cause reproducible resource accumulation.
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Run a read-only dependency/import audit for the pinned VLMEvalKit snapshot in the existing `vcot` environment. Do not install VLMEvalKit or change `torch`, `torchvision`, `transformers`, `vllm`, or `trl` yet.
+Install only `matplotlib` with `--no-deps`, verify that `matplotlib` itself imports, re-run `pip check`, then retry the VLMEvalKit import to identify the next blocker if any. Do not install any additional package until that result is inspected.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
