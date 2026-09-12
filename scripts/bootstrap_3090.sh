@@ -8,12 +8,16 @@ MONET_REPO="https://github.com/NOVAglow646/Monet.git"
 MONET_SHA="08939998d3d643a73a316e349faa34f420429153"
 PIP_INDEX_URL_DEFAULT="https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 HF_ENDPOINT_DEFAULT="https://hf-mirror.net"
+CONDA_MAIN_DEFAULT="https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main"
 
 export PIP_INDEX_URL="${PIP_INDEX_URL:-${PIP_INDEX_URL_DEFAULT}}"
 export HF_ENDPOINT="${HF_ENDPOINT:-${HF_ENDPOINT_DEFAULT}}"
 export HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-0}"
 
+mkdir -p "${ROOT_DIR}/third_party" "${ROOT_DIR}/models" "${ROOT_DIR}/logs"
+
 printf '\n[V_COT] root: %s\n' "${ROOT_DIR}"
+printf '[V_COT] conda mirror: %s\n' "${CONDA_MAIN_DEFAULT}"
 printf '[V_COT] pip mirror: %s\n' "${PIP_INDEX_URL}"
 printf '[V_COT] HF mirror: %s\n\n' "${HF_ENDPOINT}"
 
@@ -22,10 +26,10 @@ if ! command -v conda >/dev/null 2>&1; then
   exit 1
 fi
 
-# Create a dedicated environment only when it does not already exist.
+# Create a dedicated environment using a mainland mirror without modifying ~/.condarc.
 if ! conda env list | awk '{print $1}' | grep -qx 'vcot'; then
-  echo '[1/6] Creating conda env: vcot (Python 3.10)'
-  conda create -y -n vcot python=3.10
+  echo '[1/6] Creating conda env: vcot (Python 3.10) through TUNA mirror'
+  conda create -y -n vcot python=3.10 --override-channels -c "${CONDA_MAIN_DEFAULT}"
 else
   echo '[1/6] Conda env vcot already exists; keeping it.'
 fi
@@ -37,8 +41,6 @@ conda activate vcot
 printf '\n[2/6] Installing basic Python tooling through mirror\n'
 python -m pip install --upgrade pip -i "${PIP_INDEX_URL}"
 python -m pip install -i "${PIP_INDEX_URL}" huggingface_hub
-
-mkdir -p "${ROOT_DIR}/third_party" "${ROOT_DIR}/models" "${ROOT_DIR}/logs"
 
 printf '\n[3/6] Preparing pinned Monet source\n'
 if [[ ! -d "${MONET_DIR}/.git" ]]; then
@@ -104,5 +106,5 @@ echo '[DONE] Bootstrap completed.'
 echo "Monet source : ${MONET_DIR}"
 echo "Monet model  : ${MODEL_DIR}"
 echo "Env snapshot : ${ROOT_DIR}/logs/bootstrap_env.txt"
-echo 'Next: run the baseline smoke-test command documented in SETUP_3090.md.'
+echo 'Next: run the verification commands documented in SETUP_3090.md.'
 printf '%s\n' '============================================================'
