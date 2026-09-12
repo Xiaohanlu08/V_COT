@@ -9,14 +9,18 @@ The expected working directory is:
 ~/work/V_COT
 ```
 
-If this directory is empty, clone this repository into the current directory:
+### Recommended clone path for restricted GitHub connectivity
+If direct GitHub clone fails with a TLS/GnuTLS handshake error, use the GitHub proxy and force HTTP/1.1:
 
 ```bash
 cd ~/work/V_COT
-git clone https://github.com/Xiaohanlu08/V_COT.git .
+rm -rf logs
+git -c http.version=HTTP/1.1 clone https://gh-proxy.com/https://github.com/Xiaohanlu08/V_COT.git .
 ```
 
-The V_COT repository itself is tiny. Large external assets use mirrors in later steps.
+The proxy syntax intentionally wraps the full original GitHub URL. Do not disable SSL verification.
+
+If the proxy clone also fails, stop and report the exact error instead of changing global Git settings or installing packages manually.
 
 ## 2. Mirror policy
 The bootstrap script avoids changing your global Conda configuration. It uses mirrors only for this setup:
@@ -24,14 +28,12 @@ The bootstrap script avoids changing your global Conda configuration. It uses mi
 - Conda Python environment: TUNA Anaconda `pkgs/main` via `--override-channels`;
 - PyPI packages: TUNA PyPI;
 - Hugging Face checkpoint: `HF_ENDPOINT=https://hf-mirror.net`;
-- Monet source: public GitHub proxy first, official GitHub fallback second.
+- Monet source: `gh-proxy.com` first, official GitHub fallback second.
 
 The Monet Git SHA is checked after cloning, so the transport mirror does not define the source identity.
 
-If you already have a working local/institutional mirror and want to override the defaults, stop before running the script and tell us the mirror address instead of editing the script ad hoc.
-
 ## 3. Bootstrap
-Run:
+After the V_COT repository has cloned successfully, run:
 
 ```bash
 cd ~/work/V_COT
@@ -44,7 +46,7 @@ The script does the following:
 
 1. creates a `vcot` Python 3.10 Conda environment through the TUNA mirror if it does not exist;
 2. installs Python packages through the TUNA PyPI mirror;
-3. clones Monet, preferring `gh-proxy.com` and falling back to official GitHub, then checks out the exact pinned SHA;
+3. clones Monet through a GitHub proxy when possible, then checks out the exact pinned SHA;
 4. installs Monet's checked-in Python requirements;
 5. downloads `NOVAglow646/Monet-7B` through the Hugging Face mirror;
 6. records a local environment snapshot.
@@ -56,9 +58,9 @@ The SHA check is mandatory. The baseline source identity is the official Monet c
 ```text
 V_COT/
 ├── third_party/
-│   └── Monet/          # ignored by V_COT Git; pinned upstream clone
+│   └── Monet/
 ├── models/
-│   └── Monet-7B/       # ignored by V_COT Git
+│   └── Monet-7B/
 ├── logs/
 │   ├── bootstrap_console.log
 │   └── bootstrap_env.txt
