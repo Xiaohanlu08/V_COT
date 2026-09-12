@@ -18,64 +18,63 @@ Establish a reproducible Monet baseline before implementing any new latent-super
 ## Verified Infrastructure
 Verified on 2026-09-12:
 - Monet source is present at `~/work/V_COT/third_party/Monet` and HEAD is exactly `08939998d3d643a73a316e349faa34f420429153`.
-- TUNA PyPI mirror and `https://hf-mirror.net` are reachable from the GPU server; direct GitHub access is not reliable.
 - `vcot` Conda environment exists with Python 3.10.21.
 - Server has 10 x RTX 3090, 24 GiB each; driver 570.144; `nvidia-smi` reports CUDA 12.8 capability.
-- Verified runtime stack:
-  - `torch==2.7.1+cu126`
-  - `torchvision==0.22.1+cu126`
-  - `vllm==0.10.0`
-  - `transformers==4.54.0`
-  - `trl==0.15.2`
+- Verified runtime stack: `torch==2.7.1+cu126`, `torchvision==0.22.1+cu126`, `vllm==0.10.0`, `transformers==4.54.0`, `trl==0.15.2`.
 - CUDA is available and a CUDA tensor test passed.
-- Monet-7B checkpoint is fully downloaded and structurally verified.
-- Four safetensors shards total exactly 15.44 GiB, matching `model.safetensors.index.json`.
+- Monet-7B checkpoint is fully downloaded and structurally verified; four safetensors shards total 15.44 GiB, matching the checkpoint index.
 
 ## Verified Baseline Inference
-The official Monet example now runs successfully through the customized vLLM path.
-
-Observed output:
-- model returned a coherent non-empty answer;
-- predicted `\\boxed{C}`, matching the image evidence in the official example;
-- no runtime/CUDA/vLLM initialization error occurred;
-- a shutdown warning about one leaked semaphore was observed, but the inference itself completed successfully.
+The official Monet example runs successfully and returns the correct answer (`\\boxed{C}`). Model loading, multimodal preprocessing, and generation complete successfully under the pinned runtime.
 
 This marks **official-example inference as reproduced**.
 
 ## Latent-Mode Status
-The successful official-example run did **not** emit `<abs_vis_token>` or `</abs_vis_token>`:
-- `contains <abs_vis_token>: False`
-- `contains </abs_vis_token>: False`
-- `LATENT_SIZE: 10`
+Two generation runs have not yet shown a natural latent trigger:
+1. the unmodified official example did not emit `<abs_vis_token>`;
+2. a diagnostic prompt explicitly asking the model to begin with `<abs_vis_token>` also did not make the model emit it.
 
-This does **not** by itself indicate that the Monet latent runner is broken. The official README states that the model *may* emit `<abs_vis_token>` to enter latent mode; the inference runner activates latent state only when the sampled token ID equals the latent-start ID. Therefore the official example has verified ordinary generation through the Monet-patched runtime, but **natural latent activation is not yet verified**.
+The tokenizer wiring is verified:
+- `<abs_vis_token>` -> `151666`
+- `</abs_vis_token>` -> `151667`
+- `LATENT_SIZE=10`
 
-The runner code confirms that latent mode is activated only after the sampled token equals `LATENT_START_ID`; once active, it exits on `LATENT_END_ID` or after `LATENT_SIZE` steps.
+Therefore the remaining question is not token registration. We need to separate:
+- **natural trigger behavior**: whether the checkpoint chooses token 151666 on its own;
+- **runner-path correctness**: whether the customized vLLM worker enters the hidden-state latent path after token 151666 is sampled.
+
+A second implementation concern is now explicit: vLLM 0.10.0 uses a spawned EngineCore process. Patching `sys.modules` only in the parent interpreter is not sufficient evidence that the spawned worker also uses Monet's `GPUModelRunner`. Monet's README describes patching every spawned process for evaluation; the next diagnostic therefore uses Python's standard `sitecustomize.py` mechanism so the patch is applied at interpreter startup in parent and spawned worker processes.
+
+Monet's inference runner code confirms the intended latent mechanics: after a sampled token equals `LATENT_START_ID`, it sets latent state active and stores the current last-layer hidden state as `pending`; on the next decode step, when active and pending is present, that hidden vector overwrites the token embedding for the request. The state exits on `LATENT_END_ID` or after `LATENT_SIZE` steps.
 
 ## Current Task
-Run a dedicated latent-mode diagnostic rather than modifying package versions or jumping directly to benchmark evaluation.
+Run a deterministic engineering-only latent-path test using:
+- `scripts/monet_site/sitecustomize.py`: spawn-safe Monet runner patch;
+- `scripts/06_force_latent_path.py`;
+- `scripts/06_force_latent_path.sh`.
 
-New diagnostic files:
-- `scripts/05_verify_latent_mode.py`
-- `scripts/05_verify_latent_mode.sh`
+The test uses vLLM V1's built-in `allowed_token_ids=[151666]` for a very short four-token diagnostic request. This deliberately forces sampling of the latent-start token. It is **not** a benchmark configuration and cannot be used as scientific evidence of natural latent triggering.
 
-The diagnostic performs two checks:
-1. verify the checkpoint tokenizer maps `<abs_vis_token>` and `</abs_vis_token>` to the expected IDs `151666` and `151667`;
-2. run the official image with an explicit diagnostic instruction asking the model to begin with `<abs_vis_token>`, so the vLLM latent path can be exercised if the model follows the learned trigger.
+Success criteria:
+1. log contains `[VCOT_MONET_SITE]` from the parent and spawned worker path;
+2. Monet runner reports `start=151666`, `end=151667`, `latent_size=10` (or equivalent initialization evidence);
+3. generated token IDs begin with `151666` and contain at least two decode steps;
+4. no runner/runtime error occurs during subsequent decode steps.
 
-This diagnostic is infrastructure verification only. Its forced instruction must never be used as a benchmark setting or scientific result.
+If these pass, the hidden-state latent code path is operational even though natural checkpoint triggering is still unverified.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
 - [x] Reproduce runtime environment.
 - [x] Download and verify Monet-7B checkpoint.
 - [x] Reproduce official-example inference.
-- [ ] Verify tokenizer latent special-token IDs.
-- [ ] Observe at least one actual latent-mode activation through the customized runner.
+- [x] Verify tokenizer latent special-token IDs.
+- [ ] Verify the spawned worker is actually using the Monet custom runner.
+- [ ] Exercise the latent hidden-state path with a deterministic forced-start diagnostic.
+- [ ] Observe at least one natural latent-mode activation from the checkpoint, or document its trigger rate on an appropriate benchmark subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
 - [ ] Freeze reproduced baseline with a Git tag.
-- [ ] Locate the exact code path that creates/updates continuous latent visual states.
-- [ ] Verify latent-state shape, positions, count, and generation behavior.
+- [ ] Locate and instrument the exact latent-state tensors needed for V0 experiments.
 - [ ] Start V0 only after the above checks pass.
 
 ## Hardware Plan
@@ -87,18 +86,19 @@ This diagnostic is infrastructure verification only. Its forced instruction must
 None. V0 has not started.
 
 ## Current Experiment
-Baseline reproduction only; no scientific-method experiment has started.
+Baseline reproduction / latent-runtime diagnostics only; no scientific-method experiment has started.
 
 ## Known Issues
 - GitHub access from the GPU server is unavailable; source synchronization must use local staging or direct file handoff.
 - `huggingface_hub` HEAD metadata calls are incompatible with the current HF mirror for this checkpoint; direct resumable GET is the verified workaround.
 - Windows-to-Linux transfers may convert LF to CRLF; normalize transferred shell scripts before execution.
 - `nvcc` is not installed system-wide. This is not a blocker for inference but may matter later for training extensions.
-- `resource_tracker` may report a leaked semaphore at vLLM shutdown after a completed inference; do not treat this warning as a failed inference unless it causes reproducible resource leakage across runs.
-- Official Monet SFT scripts target 8 GPUs with DeepSpeed ZeRO-2 and will not be used unmodified as a 4 x RTX 3090 training recipe.
+- vLLM shutdown may emit NCCL/resource-tracker warnings after successful inference; treat them as cleanup warnings unless they cause reproducible resource accumulation.
+- The absence of `<abs_vis_token>` in one or two examples must not be interpreted as evidence that Monet lacks latent reasoning; natural trigger frequency has not yet been measured.
+- Forced latent-token diagnostics are engineering tests only and must never be mixed with baseline benchmark results.
 
 ## Next Action
-Transfer and run `scripts/05_verify_latent_mode.py` and `scripts/05_verify_latent_mode.sh`. Return the `TOKEN CHECK`, `RAW OUTPUT`, and `LATENT CHECK` sections. Do not begin benchmark evaluation or V0 development until latent-token wiring has been verified.
+Transfer and run the three step-06 diagnostic files. Return the `[VCOT_MONET_SITE]` lines, any `start_id/end_id/latent_size` runner initialization line, `RAW OUTPUT`, `TOKEN IDS`, and `FORCED PATH CHECK`. Do not start benchmark evaluation or V0 development until this runner-path check is resolved.
 
 ## Update Rule
 After every verified step, update this file with:
