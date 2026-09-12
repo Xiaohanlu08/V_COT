@@ -48,22 +48,13 @@ Natural latent activation is still not characterized. The next scientific baseli
 A full `pip install -e .` remains intentionally avoided because VLMEvalKit's requirements include broad, unpinned `torch`, `torchvision`, `transformers`, and many benchmark-specific dependencies.
 
 Verified dependency state:
-- `torch 2.7.1`, `torchvision 0.22.1`, `transformers 4.54.0`, `vllm 0.10.0`, and `trl 0.15.2` remain intact.
-- `cv2` imports successfully and reports version `5.0.0`.
-- `validators==0.35.0` installed with `--no-deps`.
-- `matplotlib==3.10.9` installed with `--no-deps`; its exact missing runtime dependencies (`contourpy`, `cycler`, `fonttools`, `kiwisolver`, `pyparsing`) were then installed with `--no-deps`.
-- `matplotlib` imports successfully (`3.10.9`).
-- `tabulate==0.10.0` installed with `--no-deps`.
-- `sty==1.0.6` installed with `--no-deps`.
-- `portalocker` has been installed sufficiently for the import chain to advance past `vlmeval/smp/misc.py`.
-- `Levenshtein==0.27.1` installed with `--no-deps`.
-- `RapidFuzz==3.14.5` installed to satisfy Levenshtein under Python 3.10.
-- `pip check` returned `No broken requirements found.` after resolving RapidFuzz.
-- `imageio` has been installed sufficiently for the import chain to advance past `vlmeval/dataset/mvbench.py`.
-- `decord==0.6.0` has been installed sufficiently for the import chain to advance past `vlmeval/dataset/sitebench.py`.
+- Monet-critical packages remain intact.
+- `validators==0.35.0`, `matplotlib==3.10.9` plus its runtime dependencies, `tabulate==0.10.0`, `sty==1.0.6`, `portalocker`, `Levenshtein==0.27.1`, `RapidFuzz==3.14.5`, `imageio`, `decord==0.6.0`, and `timeout-decorator` have been added incrementally without full VLMEvalKit installation.
+- `pip check` has remained clean after each resolved dependency layer unless explicitly noted and fixed.
 - The `.env` message emitted by `load_env` remains non-fatal and is not the blocker.
-- Full traceback now identifies the next blocker exactly as `ModuleNotFoundError: No module named 'timeout_decorator'`.
-- The traceback reaches `vlmeval/dataset/mmmath.py`, which imports `timeout_decorator`; this is another top-level dependency pulled in by VLMEvalKit's broad dataset import chain even though the current target benchmark is VStarBench.
+- Full traceback now identifies the next blocker exactly as `ModuleNotFoundError: No module named 'jieba'`.
+- The traceback reaches `vlmeval/dataset/foxbench.py`, which imports `jieba`; this is another top-level dependency pulled in by VLMEvalKit's broad dataset import chain even though the current target benchmark is VStarBench.
+- The pinned VLMEvalKit `requirements.txt` specifies `jieba>=0.42.1`.
 
 Continue minimum-dependency bring-up based on actual traceback only. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
 
@@ -93,7 +84,7 @@ Continue minimum-dependency bring-up based on actual traceback only. Do not inst
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Install only `timeout-decorator` with `--no-deps`, run `pip check`, then retry `import vlmeval` with full traceback capture. Do not install any further package until that result is inspected.
+Install only `jieba==0.42.1` with `--no-deps`, run `pip check`, then retry `import vlmeval` with full traceback capture. Do not install any further package until that result is inspected.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
