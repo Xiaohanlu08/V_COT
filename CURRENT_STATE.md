@@ -47,16 +47,15 @@ Natural latent activation is still not characterized. The next scientific baseli
 ## VLMEvalKit Dependency Bring-Up
 A full `pip install -e .` remains intentionally avoided because VLMEvalKit's requirements include broad, unpinned `torch`, `torchvision`, `transformers`, and many benchmark-specific dependencies.
 
-Read-only audit result:
+Verified dependency state:
 - `torch 2.7.1`, `torchvision 0.22.1`, `transformers 4.54.0`, `vllm 0.10.0`, and `trl 0.15.2` remain intact.
-- `pip check` reports no broken requirements.
-- `cv2` imports successfully and reports version `5.0.0`; absence of the `opencv-python` distribution name is not currently a blocker.
-- First VLMEvalKit import blocker was `validators`.
+- `cv2` imports successfully and reports version `5.0.0`.
 - Installed only `validators==0.35.0` with `--no-deps` from the TUNA mirror.
-- After that installation, `pip check` still reports no broken requirements.
-- The next import blocker is now `ModuleNotFoundError: No module named 'matplotlib'`.
+- Installed `matplotlib==3.10.9` with `--no-deps`.
+- As expected for a `--no-deps` install, `pip check` now reports missing Matplotlib runtime dependencies: `contourpy`, `cycler`, `fonttools`, `kiwisolver`, and `pyparsing`.
+- VLMEvalKit import currently stops at `ModuleNotFoundError: No module named 'pyparsing'`.
 
-Continue minimum-dependency bring-up one package at a time. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
+Continue minimum-dependency bring-up using only the exact missing Matplotlib dependencies reported by `pip check`. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -84,7 +83,7 @@ Continue minimum-dependency bring-up one package at a time. Do not install the f
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Install only `matplotlib` with `--no-deps`, verify that `matplotlib` itself imports, re-run `pip check`, then retry the VLMEvalKit import to identify the next blocker if any. Do not install any additional package until that result is inspected.
+Install only `contourpy`, `cycler`, `fonttools`, `kiwisolver`, and `pyparsing` with `--no-deps`, re-run `pip check`, verify `matplotlib` imports, then retry the VLMEvalKit import. Do not install any further package until that result is inspected.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
