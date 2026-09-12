@@ -75,26 +75,25 @@ Read-only direct audit of the pinned VLMEvalKit `requirements.txt`:
 - `opencv-python>=4.7.0.72` is functionally provided by `opencv-python-headless==5.0.0.93` / importable `cv2`; do not install a second OpenCV distribution.
 - `pip check` reports `decord 0.6.0 is not supported on this platform`; `import decord` itself succeeded sufficiently for VLMEvalKit to progress beyond that top-level import, and VStarBench is image-only. Keep this as a separate video-only issue.
 
-## Resolver Dry-Run Result
-A full unconstrained resolver dry-run for the pinned VLMEvalKit `requirements.txt` planned 76 package actions. It is unsafe to execute as-is.
+## Resolver Dry-Run Results
+An unconstrained dry-run of the full VLMEvalKit requirements planned 76 package actions and would upgrade `transformers` from verified `4.54.0` to `5.17.0`, move `huggingface_hub` and `tokenizers`, install a second OpenCV distribution, install the separate `dotenv` distribution, and downgrade `pylatexenc`. That path is unsafe and remains prohibited.
 
-Critical finding:
-- It would upgrade `transformers` from the verified `4.54.0` to `5.17.0`.
-- It would also plan `huggingface_hub==1.31.0` and `tokenizers==0.23.2`, moving the Hugging Face stack away from the verified Monet environment.
-- It would install `opencv-python==5.0.0.93` even though `opencv-python-headless==5.0.0.93` already provides `cv2`.
-- It would install the separate `dotenv==0.9.9` despite `python-dotenv==1.2.3` already providing the relevant module.
-- It would downgrade `pylatexenc` from `2.11` to `2.10` solely because of the broad pinned requirements file.
+A second dry-run was then performed on only the 29 missing direct non-core dependencies under constraints freezing the verified Monet/Hugging Face stack. This filtered/constrained plan is clean:
+- 70 total package installations are planned, including transitive dependencies.
+- `PROTECTED PACKAGE ACTIONS = NONE`.
+- No action is planned for `torch`, `torchvision`, `transformers`, `trl`, `vllm`, `huggingface_hub`, `tokenizers`, `accelerate`, `datasets`, or `qwen-vl-utils`.
+- The resolved direct package versions include `nltk==3.10.3`, `sentence-transformers==5.7.0`, `gradio==6.17.3`, `timm==1.0.29`, `torchmetrics==1.9.0`, `scikit-learn==1.7.2`, and the other audited missing packages.
 
-Therefore the full VLMEvalKit requirements file must not be installed directly in `vcot`.
+Therefore a real batch installation of the exact filtered requirements under the same constraints is now acceptable. Preserve a pre-install environment snapshot first and verify the protected stack again afterward.
 
 ## Dependency Strategy
 Use a filtered, constrained batch installation instead of either full requirements installation or serial one-by-one blocker chasing:
-1. Build a temporary requirements file containing only the 29 actually missing direct non-core dependencies.
-2. Exclude `torch`, `torchvision`, `transformers`, `vllm`, `trl`, `opencv-python`, `dotenv`, and the currently non-blocking `pylatexenc` downgrade from the installation target.
-3. Apply constraints that freeze the verified Monet stack and `huggingface_hub==0.36.2`.
-4. First perform a second dry-run on this filtered/constrained set. If any protected package is still scheduled to change, do not install.
-5. If the constrained dry-run is clean, install the same filtered set in one batch with normal dependency resolution under those constraints.
-6. Re-run `import vlmeval` and only address any remaining import-time blocker after the controlled batch installation.
+1. Use `/tmp/vlmeval_missing_direct.txt` containing only the 29 missing direct non-core dependencies.
+2. Use `/tmp/vcot_constraints.txt` to freeze the verified Monet/Hugging Face stack.
+3. Save a pre-install `pip freeze` snapshot for rollback/reference.
+4. Install the filtered set with normal dependency resolution under the constraints.
+5. Re-check protected package versions, run `pip check`, and retry `import vlmeval` with full traceback capture.
+6. Keep `pylatexenc==2.11`, the existing headless OpenCV provider, and the current `decord` warning unchanged unless they become a demonstrated blocker.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -107,8 +106,8 @@ Use a filtered, constrained batch installation instead of either full requiremen
 - [x] Place a reproducible VLMEvalKit snapshot and verify VStarBench is present.
 - [x] Complete read-only direct dependency audit for the pinned VLMEvalKit snapshot.
 - [x] Inspect the full resolver dry-run and confirm that an unconstrained install would modify protected Monet dependencies.
-- [ ] Run filtered/constrained resolver dry-run for the 29 missing non-core dependencies.
-- [ ] Complete controlled VLMEvalKit dependency bring-up.
+- [x] Run filtered/constrained resolver dry-run for the 29 missing non-core dependencies and verify `PROTECTED PACKAGE ACTIONS = NONE`.
+- [ ] Complete controlled batch VLMEvalKit dependency bring-up.
 - [ ] Measure natural latent-trigger frequency on a VStarBench subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
 - [ ] Freeze reproduced baseline with a Git tag.
@@ -126,7 +125,7 @@ Use a filtered, constrained batch installation instead of either full requiremen
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Create a filtered requirements file containing only the 29 missing direct non-core VLMEvalKit dependencies and a constraints file freezing the verified Monet stack plus `huggingface_hub==0.36.2`. Run `pip install --dry-run` on that filtered/constrained set and inspect the JSON report for any planned action involving protected packages before performing any real installation.
+Save a pre-install `pip freeze` snapshot, install the 29 filtered direct dependencies with normal transitive resolution under `/tmp/vcot_constraints.txt`, then verify the protected stack, run `pip check`, and retry `import vlmeval` with full traceback capture. Do not install the full VLMEvalKit requirements file directly.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
