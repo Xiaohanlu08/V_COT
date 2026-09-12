@@ -1,7 +1,7 @@
 # Current State
 
 ## Project Stage
-Baseline environment bootstrap / pre-inference.
+Baseline reproduction / latent-mode verification.
 
 ## Current Objective
 Establish a reproducible Monet baseline before implementing any new latent-supervision method.
@@ -12,98 +12,93 @@ Establish a reproducible Monet baseline before implementing any new latent-super
 ## Selected Upstream Baseline
 - Monet repository: `https://github.com/NOVAglow646/Monet.git`
 - Pinned commit: `08939998d3d643a73a316e349faa34f420429153`
-- Primary checkpoint for first reproduction: `NOVAglow646/Monet-7B`
+- Primary checkpoint: `NOVAglow646/Monet-7B`
 - Baseline specification: `BASELINE.md`
 
-## Last Verified State
-The V_COT project root, pinned Monet source, runtime, and Monet-7B checkpoint are present and verified on the GPU server.
-
+## Verified Infrastructure
 Verified on 2026-09-12:
-- Monet source is at `~/work/V_COT/third_party/Monet`.
-- server-side Monet HEAD is exactly `08939998d3d643a73a316e349faa34f420429153`.
-- TUNA PyPI mirror is reachable (`HTTP/2 200`).
-- `https://hf-mirror.net` is reachable (`HTTP/2 200`).
-- direct GitHub access is unavailable from the GPU server and source synchronization must continue through the Windows staging machine or direct file handoff from ChatGPT.
+- Monet source is present at `~/work/V_COT/third_party/Monet` and HEAD is exactly `08939998d3d643a73a316e349faa34f420429153`.
+- TUNA PyPI mirror and `https://hf-mirror.net` are reachable from the GPU server; direct GitHub access is not reliable.
 - `vcot` Conda environment exists with Python 3.10.21.
-- the physical server contains 10 x NVIDIA GeForce RTX 3090, each with 24 GiB VRAM.
-- NVIDIA driver is 570.144; `nvidia-smi` reports CUDA 12.8 capability.
-- system `nvcc` is not available, but it is not required for the current prebuilt-wheel inference gate.
-- pinned Monet runtime installation completed successfully.
-- verified runtime versions are:
+- Server has 10 x RTX 3090, 24 GiB each; driver 570.144; `nvidia-smi` reports CUDA 12.8 capability.
+- Verified runtime stack:
   - `torch==2.7.1+cu126`
   - `torchvision==0.22.1+cu126`
   - `vllm==0.10.0`
   - `transformers==4.54.0`
   - `trl==0.15.2`
-- PyTorch CUDA build is 12.6, CUDA is available, all 10 GPUs are visible, and a CUDA tensor operation passed on RTX 3090 (compute capability 8.6).
-- Monet-7B was downloaded successfully through the direct-GET mirror workaround and structurally verified.
-- checkpoint config reports `model_type=qwen2_5_vl` and architecture `Qwen2_5_VLForConditionalGeneration`.
-- `model.safetensors.index.json` references exactly 4 weight shards.
-- verified shard sizes are approximately 4.622, 4.628, 4.633, and 1.557 GiB.
-- indexed tensor size and actual shard size both equal 15.44 GiB.
-- local checkpoint directory is `~/work/V_COT/models/Monet-7B` and occupies about 16 GiB on disk.
+- CUDA is available and a CUDA tensor test passed.
+- Monet-7B checkpoint is fully downloaded and structurally verified.
+- Four safetensors shards total exactly 15.44 GiB, matching `model.safetensors.index.json`.
 
-The first smoke-inference attempt failed before model loading because the test executed Python from stdin (`python - <<'PY'`). vLLM 0.10.0 switched to the `spawn` multiprocessing method after CUDA initialization; the spawned child process then attempted to re-import the parent program from `<stdin>` and raised `FileNotFoundError: .../Monet/<stdin>`, followed by `RuntimeError: Engine core initialization failed`.
+## Verified Baseline Inference
+The official Monet example now runs successfully through the customized vLLM path.
 
-This is an entrypoint/multiprocessing issue, not a Monet checkpoint, CUDA, vLLM-version, or model-memory failure.
+Observed output:
+- model returned a coherent non-empty answer;
+- predicted `\\boxed{C}`, matching the image evidence in the official example;
+- no runtime/CUDA/vLLM initialization error occurred;
+- a shutdown warning about one leaked semaphore was observed, but the inference itself completed successfully.
 
-The smoke test has now been refactored:
-- `scripts/04_monet_smoke_inference.py` is a real Python entrypoint with an `if __name__ == "__main__":` guard.
-- `scripts/04_monet_smoke_inference.sh` calls that file instead of executing Python from stdin.
-- the shell wrapper explicitly sets `VLLM_WORKER_MULTIPROC_METHOD=spawn`.
-- unless the user sets `CUDA_VISIBLE_DEVICES`, the wrapper automatically selects the physical GPU with the lowest currently reported memory usage.
+This marks **official-example inference as reproduced**.
+
+## Latent-Mode Status
+The successful official-example run did **not** emit `<abs_vis_token>` or `</abs_vis_token>`:
+- `contains <abs_vis_token>: False`
+- `contains </abs_vis_token>: False`
+- `LATENT_SIZE: 10`
+
+This does **not** by itself indicate that the Monet latent runner is broken. The official README states that the model *may* emit `<abs_vis_token>` to enter latent mode; the inference runner activates latent state only when the sampled token ID equals the latent-start ID. Therefore the official example has verified ordinary generation through the Monet-patched runtime, but **natural latent activation is not yet verified**.
+
+The runner code confirms that latent mode is activated only after the sampled token equals `LATENT_START_ID`; once active, it exits on `LATENT_END_ID` or after `LATENT_SIZE` steps.
 
 ## Current Task
-1. Transfer the revised `scripts/04_monet_smoke_inference.sh` and new `scripts/04_monet_smoke_inference.py` to the GPU server.
-2. Normalize shell line endings if transferred through Windows.
-3. Re-run the official-example smoke inference.
-4. Record the raw model output and whether `<abs_vis_token> ... </abs_vis_token>` appears, confirming latent-mode behavior.
+Run a dedicated latent-mode diagnostic rather than modifying package versions or jumping directly to benchmark evaluation.
+
+New diagnostic files:
+- `scripts/05_verify_latent_mode.py`
+- `scripts/05_verify_latent_mode.sh`
+
+The diagnostic performs two checks:
+1. verify the checkpoint tokenizer maps `<abs_vis_token>` and `</abs_vis_token>` to the expected IDs `151666` and `151667`;
+2. run the official image with an explicit diagnostic instruction asking the model to begin with `<abs_vis_token>`, so the vLLM latent path can be exercised if the model follows the learned trigger.
+
+This diagnostic is infrastructure verification only. Its forced instruction must never be used as a benchmark setting or scientific result.
 
 ## Next Milestones
-- [x] Select the exact Monet implementation to use as the baseline.
-- [x] Record the upstream repository URL and upstream commit SHA.
-- [x] Characterize the server network as restricted-overseas rather than fully offline.
-- [x] Verify TUNA PyPI availability from the server.
-- [x] Verify HF mirror availability from the server.
-- [x] Transfer the V_COT project-root files to the server.
-- [x] Transfer pinned Monet source to `third_party/Monet` and verify its SHA on the server.
-- [x] Create the `vcot` Python 3.10 environment through domestic mirrors.
-- [x] Verify GPU driver/CUDA compatibility for the Monet/vLLM dependency set.
-- [x] Install and verify the pinned Monet runtime requirements.
-- [x] Download and structurally verify the official Monet-7B checkpoint through `hf-mirror.net`.
-- [ ] Reproduce official inference on at least one provided example.
-- [ ] Observe/verify latent-mode generation behavior.
-- [ ] Reproduce the selected Monet benchmark baseline under documented settings.
-- [ ] Freeze the reproduced baseline with a Git tag.
+- [x] Select and pin Monet upstream implementation.
+- [x] Reproduce runtime environment.
+- [x] Download and verify Monet-7B checkpoint.
+- [x] Reproduce official-example inference.
+- [ ] Verify tokenizer latent special-token IDs.
+- [ ] Observe at least one actual latent-mode activation through the customized runner.
+- [ ] Reproduce selected Monet benchmark baseline under documented settings.
+- [ ] Freeze reproduced baseline with a Git tag.
 - [ ] Locate the exact code path that creates/updates continuous latent visual states.
 - [ ] Verify latent-state shape, positions, count, and generation behavior.
 - [ ] Start V0 only after the above checks pass.
 
 ## Hardware Plan
-- The physical server has 10 x RTX 3090.
-- Development/debug/V0 pilot will initially use a 4 x RTX 3090 allocation when needed.
-- Smoke inference uses one RTX 3090 and now automatically selects the least-used physical GPU by default.
-- Full-scale or RL/VLPO experiments may later use more 3090s or H200 when justified by memory/runtime.
-
-This is a resource-allocation decision, not a change to the scientific goal.
+- Development/debug/V0 pilot: 4 x RTX 3090 when needed.
+- Lightweight smoke/diagnostic inference: one currently free RTX 3090.
+- Full-scale or RL/VLPO experiments may later use more 3090s or H200 if justified by memory/runtime.
 
 ## Active Method Version
 None. V0 has not started.
 
 ## Current Experiment
-Official-example Monet smoke inference. This is still baseline reproduction, not a scientific experiment.
+Baseline reproduction only; no scientific-method experiment has started.
 
 ## Known Issues
-- Direct GitHub access from the target server is unavailable; GitHub must not be part of the server-side bootstrap path.
-- Windows GitHub access is also intermittent; when synchronization fails, current scripts can be handed off directly as files while GitHub remains the authoritative project record.
-- `huggingface_hub` can fail against the current mirror because the mirror/proxy may omit `Content-Length` from HEAD metadata responses. The checkpoint was therefore downloaded with direct resumable GET requests; do not downgrade the verified runtime stack for this network-layer issue.
-- Windows-to-Linux transfer previously converted shell scripts to CRLF; `.gitattributes` enforces LF for shell scripts, and transferred scripts should still be normalized with `sed -i 's/\r$//'` before execution when necessary.
-- `nvcc` is not installed system-wide. This is not a blocker for inference, but later DeepSpeed/custom CUDA extension compilation may require a CUDA toolkit.
-- Official Monet SFT scripts are written for 8 GPUs with DeepSpeed ZeRO-2; they will not be treated as a drop-in 4 x RTX 3090 recipe.
-- The project will not change torch/vLLM/Transformers versions casually after runtime verification.
+- GitHub access from the GPU server is unavailable; source synchronization must use local staging or direct file handoff.
+- `huggingface_hub` HEAD metadata calls are incompatible with the current HF mirror for this checkpoint; direct resumable GET is the verified workaround.
+- Windows-to-Linux transfers may convert LF to CRLF; normalize transferred shell scripts before execution.
+- `nvcc` is not installed system-wide. This is not a blocker for inference but may matter later for training extensions.
+- `resource_tracker` may report a leaked semaphore at vLLM shutdown after a completed inference; do not treat this warning as a failed inference unless it causes reproducible resource leakage across runs.
+- Official Monet SFT scripts target 8 GPUs with DeepSpeed ZeRO-2 and will not be used unmodified as a 4 x RTX 3090 training recipe.
 
 ## Next Action
-Transfer the revised smoke-test shell wrapper and Python entrypoint, then rerun `scripts/04_monet_smoke_inference.sh`. Do not modify runtime package versions. If the next failure is GPU OOM, switch to a currently free GPU or a 2-GPU tensor-parallel smoke test without changing the software stack.
+Transfer and run `scripts/05_verify_latent_mode.py` and `scripts/05_verify_latent_mode.sh`. Return the `TOKEN CHECK`, `RAW OUTPUT`, and `LATENT CHECK` sections. Do not begin benchmark evaluation or V0 development until latent-token wiring has been verified.
 
 ## Update Rule
 After every verified step, update this file with:
