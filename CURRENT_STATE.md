@@ -44,19 +44,41 @@ A filtered audit identified 29 missing direct non-core requirements. A constrain
 
 After the controlled batch:
 - `pip check` reports only `decord 0.6.0 is not supported on this platform`.
-- This `decord` warning remains treated as a separate video-only compatibility issue because its import had already succeeded and the current target VStarBench is image-only.
-- `import vlmeval` now advances beyond the previously missing packages but fails at `vlmeval/dataset/foxbench.py` with `ModuleNotFoundError: No module named 'rouge'`.
-- `foxbench.py` contains a top-level `from rouge import Rouge` import.
-- The pinned VLMEvalKit `requirements.txt` does not list `rouge`, so the previous direct-requirement audit could not discover this blocker.
+- This `decord` warning remains a separate video-only compatibility issue because its import succeeds and the target VStarBench is image-only.
+- `import vlmeval` advances to `vlmeval/dataset/foxbench.py` and fails on undeclared `rouge`.
+- The pinned VLMEvalKit `requirements.txt` does not list `rouge`.
 - The `.env` warning emitted by `load_env` remains non-fatal.
 
+## Source-Level Import Audit
+A read-only static import-graph audit was completed starting from top-level `vlmeval` import.
+
+Verified protected stack after the controlled batch:
+- `torch==2.7.1`
+- `torchvision==0.22.1`
+- `transformers==4.54.0`
+- `trl==0.15.2`
+- `vllm==0.10.0`
+- `huggingface-hub==0.36.2`
+- `tokenizers==0.21.4`
+- `accelerate==1.15.0`
+- `datasets==5.0.1`
+- `qwen-vl-utils==0.0.14`
+
+Audit results:
+- 402 local modules are reachable from top-level `vlmeval` import.
+- Exactly one unguarded external module is missing: `rouge`.
+- Blocking source location: `vlmeval/dataset/foxbench.py:12 -> from rouge import Rouge`.
+- Optional/guarded-only missing modules: `anthropic`, `boto3`, `botocore`, `flash_attn`, and `vertexai`.
+- Those five optional modules do not block top-level `import vlmeval` and should not be installed for the VStarBench path unless later required.
+- No Python parse errors were found in the audit.
+- PyPI package `rouge==1.0.1` provides the exact `from rouge import Rouge` API used by `foxbench.py`.
+
 ## Dependency Strategy
-The direct-requirement audit is no longer sufficient because the repository contains import-time dependencies that are not declared in `requirements.txt`. Do not return to blind one-by-one installation. Instead:
 1. Keep the protected Monet/Hugging Face stack fixed.
-2. Perform a read-only static source-import audit starting from the pinned local `vlmeval` package to identify missing external import modules reachable from top-level package imports.
-3. Verify the protected stack again after the controlled batch installation.
-4. Batch-handle only the missing undeclared imports that are actually relevant to import-time package initialization.
-5. Retry `import vlmeval` only after this source-level audit.
+2. Do not install optional cloud/video/FlashAttention dependencies unless they become relevant.
+3. Install only `rouge==1.0.1` with `--no-deps`; its purpose is solely to satisfy the remaining hard import blocker.
+4. Re-run protected-stack verification, `pip check`, and `import vlmeval`.
+5. If `import vlmeval` passes, stop dependency bring-up and move directly to inspecting the exact Monet/VLMEvalKit evaluation integration and raw token-ID capture path for VStarBench.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -71,8 +93,9 @@ The direct-requirement audit is no longer sufficient because the repository cont
 - [x] Confirm unconstrained installation would modify protected Monet dependencies.
 - [x] Run filtered/constrained dry-run and verify `PROTECTED PACKAGE ACTIONS = NONE`.
 - [x] Install the filtered missing direct dependencies under constraints.
-- [ ] Complete source-level audit for undeclared import-time dependencies.
-- [ ] Complete controlled VLMEvalKit import bring-up.
+- [x] Complete source-level audit for undeclared import-time dependencies.
+- [ ] Install `rouge==1.0.1` and verify `import vlmeval` passes.
+- [ ] Inspect exact Monet/VLMEvalKit evaluation integration and raw token-ID capture path.
 - [ ] Measure natural latent-trigger frequency on a VStarBench subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
 - [ ] Freeze reproduced baseline with a Git tag.
@@ -89,7 +112,7 @@ The direct-requirement audit is no longer sufficient because the repository cont
 - vLLM shutdown may emit NCCL/resource-tracker cleanup warnings after successful inference.
 
 ## Next Action
-Run a read-only source-level import audit on the local pinned VLMEvalKit tree and report all missing external modules reachable from package top-level imports, together with the protected Monet/Hugging Face package versions. Do not install `rouge` yet; first determine whether there are additional undeclared import-time dependencies so they can be handled in one controlled batch.
+Install only `rouge==1.0.1` with `--no-deps`, then verify the protected stack remains unchanged, run `pip check`, and retry `import vlmeval` with full traceback capture. Do not install the five optional guarded modules.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
