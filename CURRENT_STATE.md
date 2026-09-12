@@ -23,20 +23,26 @@ Verified on 2026-09-12:
 - server-side Monet HEAD is exactly `08939998d3d643a73a316e349faa34f420429153`.
 - TUNA PyPI mirror is reachable (`HTTP/2 200`).
 - `https://hf-mirror.net` is reachable (`HTTP/2 200`).
-- direct GitHub access is unavailable from the GPU server and source synchronization must continue through the Windows staging machine.
-- `vcot` Conda environment was created successfully with Python 3.10.21.
-- the server contains 10 x NVIDIA GeForce RTX 3090, each with 24 GiB VRAM.
-- NVIDIA driver is 570.144 and `nvidia-smi` reports CUDA 12.8 capability.
-- GPU 7 was occupied by another Python process using about 15.5 GiB during the probe; project development should avoid GPU 7 unless it becomes free.
-- system `nvcc` is not currently available.
-- PyTorch was intentionally not installed during the first compatibility probe.
+- direct GitHub access is unavailable from the GPU server and source synchronization must continue through the Windows staging machine or direct file handoff from ChatGPT.
+- `vcot` Conda environment exists with Python 3.10.21.
+- the physical server contains 10 x NVIDIA GeForce RTX 3090, each with 24 GiB VRAM.
+- NVIDIA driver is 570.144; `nvidia-smi` reports CUDA 12.8 capability.
+- system `nvcc` is not available, but it is not required for the current prebuilt-wheel inference gate.
+- pinned Monet runtime installation completed successfully.
+- verified runtime versions are:
+  - `torch==2.7.1+cu126`
+  - `torchvision==0.22.1+cu126`
+  - `vllm==0.10.0`
+  - `transformers==4.54.0`
+  - `trl==0.15.2`
+- PyTorch CUDA build is 12.6, CUDA is available, all 10 GPUs are visible, and a CUDA tensor operation passed on RTX 3090 (compute capability 8.6).
 
-The current driver is suitable for the pinned vLLM/PyTorch runtime path. The next controlled installation pins `torch==2.7.1`, `torchvision==0.22.1`, `vllm==0.10.0`, `transformers==4.54.0`, and `trl==0.15.2` before installing the remaining Monet requirements.
+The runtime gate is therefore complete. The next gate is checkpoint download and official-example inference.
 
 ## Current Task
-1. Synchronize the newly added `scripts/02_install_monet_runtime.sh` from GitHub to the Windows staging tree and upload it to the GPU server.
-2. Run the script in the existing `vcot` environment using the TUNA PyPI mirror.
-3. Verify package versions, `pip check`, CUDA availability, and a minimal CUDA tensor operation.
+1. Run `scripts/03_download_monet7b.sh` to download `NOVAglow646/Monet-7B` through `hf-mirror.net` and verify the local checkpoint structure.
+2. After successful download, run `scripts/04_monet_smoke_inference.sh` on a single RTX 3090 (physical GPU 0 by default).
+3. Record the raw model output and whether `<abs_vis_token> ... </abs_vis_token>` appears, confirming latent-mode behavior.
 
 ## Next Milestones
 - [x] Select the exact Monet implementation to use as the baseline.
@@ -48,8 +54,8 @@ The current driver is suitable for the pinned vLLM/PyTorch runtime path. The nex
 - [x] Transfer pinned Monet source to `third_party/Monet` and verify its SHA on the server.
 - [x] Create the `vcot` Python 3.10 environment through domestic mirrors.
 - [x] Verify GPU driver/CUDA compatibility for the Monet/vLLM dependency set.
-- [ ] Install and verify the pinned Monet runtime requirements.
-- [ ] Download the official Monet-7B checkpoint through `hf-mirror.net`.
+- [x] Install and verify the pinned Monet runtime requirements.
+- [ ] Download and structurally verify the official Monet-7B checkpoint through `hf-mirror.net`.
 - [ ] Reproduce official inference on at least one provided example.
 - [ ] Observe/verify latent-mode generation behavior.
 - [ ] Reproduce the selected Monet benchmark baseline under documented settings.
@@ -61,7 +67,8 @@ The current driver is suitable for the pinned vLLM/PyTorch runtime path. The nex
 ## Hardware Plan
 - The physical server has 10 x RTX 3090.
 - Development/debug/V0 pilot will initially use GPUs 0-3 as a 4 x RTX 3090 allocation.
-- Avoid GPU 7 while the currently observed external process remains active.
+- The first Monet smoke inference uses one physical RTX 3090, GPU 0 by default.
+- Avoid GPU 7 while the previously observed external process remains active.
 - Full-scale or RL/VLPO experiments may later use more 3090s or H200 when justified by memory/runtime.
 
 This is a resource-allocation decision, not a change to the scientific goal.
@@ -70,17 +77,18 @@ This is a resource-allocation decision, not a change to the scientific goal.
 None. V0 has not started.
 
 ## Current Experiment
-Environment/runtime bootstrap only; not yet a scientific experiment.
+Baseline checkpoint download and official-example smoke inference. This is still infrastructure/baseline reproduction, not a scientific experiment.
 
 ## Known Issues
 - Direct GitHub access from the target server is unavailable; GitHub must not be part of the server-side bootstrap path.
-- Windows-to-Linux transfer previously converted shell scripts to CRLF; `.gitattributes` now enforces LF for shell scripts, and existing transferred scripts can be normalized with `sed -i 's/\r$//'` if needed.
-- `nvcc` is not installed system-wide. This is not a blocker for the current prebuilt-wheel inference/runtime gate, but later DeepSpeed/custom CUDA extension compilation may require a CUDA toolkit.
+- Windows GitHub access is also intermittent; when synchronization fails, current scripts can be handed off directly as files while GitHub remains the authoritative project record.
+- Windows-to-Linux transfer previously converted shell scripts to CRLF; `.gitattributes` enforces LF for shell scripts, and transferred scripts should still be normalized with `sed -i 's/\r$//'` before execution when necessary.
+- `nvcc` is not installed system-wide. This is not a blocker for inference, but later DeepSpeed/custom CUDA extension compilation may require a CUDA toolkit.
 - Official Monet SFT scripts are written for 8 GPUs with DeepSpeed ZeRO-2; they will not be treated as a drop-in 4 x RTX 3090 recipe.
 - The project will not change torch/vLLM/Transformers versions casually after runtime verification.
 
 ## Next Action
-Run `scripts/02_install_monet_runtime.sh`, return the complete terminal output, and do not download the Monet-7B checkpoint or run inference until the pinned runtime stack passes `pip check` and the CUDA tensor test.
+Download Monet-7B with `scripts/03_download_monet7b.sh`. Do not start benchmark evaluation yet. After structural verification succeeds, run `scripts/04_monet_smoke_inference.sh` and return the raw output plus latent-token check.
 
 ## Update Rule
 After every verified step, update this file with:
