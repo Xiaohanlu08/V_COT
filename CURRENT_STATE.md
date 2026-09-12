@@ -44,17 +44,47 @@ Observed token IDs exactly matched `[151666, 151666, 151667]` with `LATENT_SIZE=
 ## Natural Latent-Trigger Status
 Natural latent activation is still not characterized. The next scientific baseline step is a small natural-trigger scan on `VStarBench` without forced tokens.
 
-## VLMEvalKit Dependency Bring-Up
-A full `pip install -e .` remains intentionally avoided because VLMEvalKit's requirements include broad, mostly unpinned dependencies including `torch`, `torchvision`, and `transformers`, plus many dependencies for unrelated benchmarks.
+## VLMEvalKit Dependency Audit
+A full `pip install -e .` / `pip install -r requirements.txt` remains intentionally avoided because VLMEvalKit's requirements are broad and mostly unpinned, and include Monet-critical packages such as `torch`, `torchvision`, and `transformers` plus many dependencies for unrelated benchmarks.
 
-Verified dependency state so far:
-- Monet-critical packages remain intact.
-- `validators==0.35.0`, `matplotlib==3.10.9` plus its runtime dependencies, `tabulate==0.10.0`, `sty==1.0.6`, `portalocker`, `Levenshtein==0.27.1`, `RapidFuzz==3.14.5`, `imageio`, `decord==0.6.0`, `timeout-decorator`, and `jieba==0.42.1` have been added incrementally without a full VLMEvalKit install.
-- `pip check` has remained clean after each resolved dependency layer unless explicitly noted and fixed.
-- The `.env` message emitted by `load_env` is non-fatal and is not the import blocker.
-- After resolving `jieba`, the next observed import blocker is `ModuleNotFoundError: No module named 'nltk'` from `vlmeval/dataset/foxbench.py`.
+Verified protected stack remains unchanged:
+- `torch==2.7.1`
+- `torchvision==0.22.1`
+- `transformers==4.54.0`
+- `trl==0.15.2`
+- `vllm==0.10.0`
 
-The one-by-one strategy was chosen initially to protect the already verified Monet runtime and to avoid installing a large set of benchmark-specific packages that VStarBench itself may not need. However, VLMEvalKit's broad top-level import chain is causing many unrelated benchmark dependencies to appear serially. The strategy is therefore changed: perform a read-only batch audit of the entire pinned `requirements.txt` against the current `vcot` environment, including version-specifier checks, before installing anything else. Then install only the audited missing non-core dependencies, while keeping Monet-critical versions fixed.
+Incrementally added without full VLMEvalKit installation:
+- `validators==0.35.0`
+- `matplotlib==3.10.9` plus required runtime dependencies
+- `tabulate==0.10.0`
+- `sty==1.0.6`
+- `portalocker`
+- `Levenshtein==0.27.1`
+- `RapidFuzz==3.14.5`
+- `imageio`
+- `decord==0.6.0`
+- `timeout-decorator`
+- `jieba==0.42.1`
+
+Read-only audit of the pinned VLMEvalKit `requirements.txt` is complete:
+- 32 direct requirements currently satisfied.
+- 29 direct requirements are still missing: `anls`, `antlr4-python3-runtime`, `apted`, `bert_score`, `cairosvg`, `colormath`, `distance`, `editdistance`, `google-genai`, `gradio`, `ipdb`, `json_repair`, `lpips`, `lxml`, `math-verify`, `nltk`, `num2words`, `omegaconf`, `openai-clip`, `openpyxl`, `pdf2image`, `polygon3`, `scikit-image`, `scikit-learn`, `sentence_transformers`, `timm`, `torchmetrics`, `xlsxwriter`, and `zss`.
+- One direct version mismatch: pinned requirement `pylatexenc==2.10`, installed `pylatexenc==2.11`.
+- `dotenv` is effectively provided by `python-dotenv==1.2.3`.
+- `opencv-python>=4.7.0.72` is effectively provided by `opencv-python-headless==5.0.0.93` / importable `cv2`.
+- `pip check` now reports `decord 0.6.0 is not supported on this platform`. This is recorded separately from missing requirements; `import vlmeval` has already progressed beyond the `decord` import, and VStarBench itself is image-only.
+- Before the batch audit, the next serial top-level import blocker was `nltk`, but further one-by-one installation is paused.
+
+## Dependency Strategy
+The original one-by-one strategy was used to protect the verified Monet runtime and avoid accidental upgrades of `torch`, `torchvision`, `transformers`, `vllm`, or `trl`. Because VLMEvalKit imports many unrelated benchmark modules at top level, serial blocker chasing is inefficient.
+
+New strategy:
+1. Keep the protected Monet stack fixed.
+2. Use pip resolver dry-run only to inspect what a full VLMEvalKit install would attempt to add/change; do not mutate the environment.
+3. From that plan, batch-install only missing non-core dependencies with controlled versions and `--no-deps` where appropriate.
+4. Treat the `decord` platform warning as a separate video-only compatibility issue unless it becomes relevant to the selected image benchmark.
+5. Re-run `import vlmeval`; only then move to VStarBench natural-trigger work.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -65,8 +95,9 @@ The one-by-one strategy was chosen initially to protect the already verified Mon
 - [x] Verify official-style runner patch in both parent and spawned child.
 - [x] Exercise the official Monet latent hidden-state path with deterministic forced-start/end behavior.
 - [x] Place a reproducible VLMEvalKit snapshot and verify VStarBench is present.
-- [ ] Complete batch dependency audit for the pinned VLMEvalKit snapshot without mutating the environment.
-- [ ] Complete minimum VLMEvalKit dependency bring-up without modifying Monet-critical versions.
+- [x] Complete read-only direct dependency audit for the pinned VLMEvalKit snapshot.
+- [ ] Inspect resolver dry-run and ensure protected Monet packages would not be changed.
+- [ ] Complete controlled VLMEvalKit dependency bring-up.
 - [ ] Measure natural latent-trigger frequency on a VStarBench subset.
 - [ ] Reproduce selected Monet benchmark baseline under documented settings.
 - [ ] Freeze reproduced baseline with a Git tag.
@@ -79,11 +110,12 @@ The one-by-one strategy was chosen initially to protect the already verified Mon
 - Windows-to-Linux transfers may convert LF to CRLF; normalize transferred shell scripts before execution.
 - `huggingface_hub` HEAD metadata calls are incompatible with the current HF mirror for the Monet checkpoint; direct resumable GET is the verified workaround.
 - `nvcc` is not installed system-wide.
+- `decord==0.6.0` currently triggers a `pip check` platform-support warning even though the Python import chain has progressed past it; do not treat `pip check` cleanliness as the sole gate for VStarBench.
 - vLLM shutdown may emit NCCL/resource-tracker warnings after successful inference; treat them as cleanup warnings unless they cause reproducible resource accumulation.
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Run a read-only full audit of `third_party/VLMEvalKit/requirements.txt` against the active `vcot` environment. Report installed direct requirements, missing direct requirements, version mismatches, and the protected Monet-critical package versions. Also run `pip check` to expose missing transitive dependencies. Do not install `nltk` or any additional package until the audit result is inspected.
+Run a pip resolver dry-run for the pinned VLMEvalKit `requirements.txt`, write its JSON report to `/tmp/vlmeval_dryrun.json`, and summarize any planned action involving protected Monet packages (`torch`, `torchvision`, `transformers`, `vllm`, `trl`) before installing anything else.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
