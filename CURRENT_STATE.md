@@ -25,43 +25,37 @@ Verified on 2026-09-12:
 - Monet-7B checkpoint is fully downloaded and structurally verified; four safetensors shards total 15.44 GiB, matching the checkpoint index.
 
 ## Verified Baseline Inference
-The official Monet example runs successfully and returns the correct answer (`\\boxed{C}`). Model loading, multimodal preprocessing, and generation complete successfully under the pinned runtime.
-
-This marks **official-example inference as reproduced**.
+The official Monet example runs successfully and returns the correct answer (`\\boxed{C}`). This marks official-example inference as reproduced.
 
 ## Latent-Mode Status
-Two generation runs have not yet shown a natural latent trigger:
+Natural latent activation is not yet verified:
 1. the unmodified official example did not emit `<abs_vis_token>`;
 2. a diagnostic prompt explicitly asking the model to begin with `<abs_vis_token>` also did not make the model emit it.
 
-The tokenizer wiring is verified:
+Tokenizer wiring is verified:
 - `<abs_vis_token>` -> `151666`
 - `</abs_vis_token>` -> `151667`
 - `LATENT_SIZE=10`
 
-Therefore the remaining question is not token registration. We need to separate:
-- **natural trigger behavior**: whether the checkpoint chooses token 151666 on its own;
-- **runner-path correctness**: whether the customized vLLM worker enters the hidden-state latent path after token 151666 is sampled.
+A forced-token test successfully generated `[151666, 151666, 151666, 151666]`, but that run did **not** verify the Monet hidden-state path because the required spawn-safe `sitecustomize.py` was absent on the server. The expected `[VCOT_MONET_SITE]` / Monet-runner patch logs were also absent. Therefore that run must not be counted as a successful latent-runtime verification.
 
-A second implementation concern is now explicit: vLLM 0.10.0 uses a spawned EngineCore process. Patching `sys.modules` only in the parent interpreter is not sufficient evidence that the spawned worker also uses Monet's `GPUModelRunner`. Monet's README describes patching every spawned process for evaluation; the next diagnostic therefore uses Python's standard `sitecustomize.py` mechanism so the patch is applied at interpreter startup in parent and spawned worker processes.
+The server check confirmed:
+- `~/work/V_COT/scripts/monet_site/sitecustomize.py` does not exist;
+- `import sitecustomize` fails with `ModuleNotFoundError` under the intended `PYTHONPATH`.
 
-Monet's inference runner code confirms the intended latent mechanics: after a sampled token equals `LATENT_START_ID`, it sets latent state active and stores the current last-layer hidden state as `pending`; on the next decode step, when active and pending is present, that hidden vector overwrites the token embedding for the request. The state exits on `LATENT_END_ID` or after `LATENT_SIZE` steps.
+This fully explains why Step 06 could force token 151666 yet still fail to prove that spawned vLLM workers were using Monet's custom `GPUModelRunner`.
 
 ## Current Task
-Run a deterministic engineering-only latent-path test using:
-- `scripts/monet_site/sitecustomize.py`: spawn-safe Monet runner patch;
-- `scripts/06_force_latent_path.py`;
-- `scripts/06_force_latent_path.sh`.
+Install the missing `scripts/monet_site/sitecustomize.py`, verify that Python resolves:
+- `sitecustomize.__file__` to `scripts/monet_site/sitecustomize.py`;
+- `vllm.v1.worker.gpu_model_runner.__file__` to `third_party/Monet/inference/vllm/monet_gpu_model_runner.py`.
 
-The test uses vLLM V1's built-in `allowed_token_ids=[151666]` for a very short four-token diagnostic request. This deliberately forces sampling of the latent-start token. It is **not** a benchmark configuration and cannot be used as scientific evidence of natural latent triggering.
+Only after this lightweight preflight passes should Step 06 load Monet-7B again.
 
-Success criteria:
-1. log contains `[VCOT_MONET_SITE]` from the parent and spawned worker path;
-2. Monet runner reports `start=151666`, `end=151667`, `latent_size=10` (or equivalent initialization evidence);
-3. generated token IDs begin with `151666` and contain at least two decode steps;
-4. no runner/runtime error occurs during subsequent decode steps.
-
-If these pass, the hidden-state latent code path is operational even though natural checkpoint triggering is still unverified.
+`scripts/06_force_latent_path.sh` has been hardened so it now:
+- exits immediately if `sitecustomize.py` is missing;
+- runs a preflight import check before model loading;
+- asserts that the active vLLM runner comes from the Monet source tree.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -69,6 +63,7 @@ If these pass, the hidden-state latent code path is operational even though natu
 - [x] Download and verify Monet-7B checkpoint.
 - [x] Reproduce official-example inference.
 - [x] Verify tokenizer latent special-token IDs.
+- [ ] Install and verify spawn-safe `sitecustomize.py` on the server.
 - [ ] Verify the spawned worker is actually using the Monet custom runner.
 - [ ] Exercise the latent hidden-state path with a deterministic forced-start diagnostic.
 - [ ] Observe at least one natural latent-mode activation from the checkpoint, or document its trigger rate on an appropriate benchmark subset.
@@ -77,35 +72,16 @@ If these pass, the hidden-state latent code path is operational even though natu
 - [ ] Locate and instrument the exact latent-state tensors needed for V0 experiments.
 - [ ] Start V0 only after the above checks pass.
 
-## Hardware Plan
-- Development/debug/V0 pilot: 4 x RTX 3090 when needed.
-- Lightweight smoke/diagnostic inference: one currently free RTX 3090.
-- Full-scale or RL/VLPO experiments may later use more 3090s or H200 if justified by memory/runtime.
-
-## Active Method Version
-None. V0 has not started.
-
-## Current Experiment
-Baseline reproduction / latent-runtime diagnostics only; no scientific-method experiment has started.
-
 ## Known Issues
 - GitHub access from the GPU server is unavailable; source synchronization must use local staging or direct file handoff.
-- `huggingface_hub` HEAD metadata calls are incompatible with the current HF mirror for this checkpoint; direct resumable GET is the verified workaround.
 - Windows-to-Linux transfers may convert LF to CRLF; normalize transferred shell scripts before execution.
+- `huggingface_hub` HEAD metadata calls are incompatible with the current HF mirror for this checkpoint; direct resumable GET is the verified workaround.
 - `nvcc` is not installed system-wide. This is not a blocker for inference but may matter later for training extensions.
 - vLLM shutdown may emit NCCL/resource-tracker warnings after successful inference; treat them as cleanup warnings unless they cause reproducible resource accumulation.
-- The absence of `<abs_vis_token>` in one or two examples must not be interpreted as evidence that Monet lacks latent reasoning; natural trigger frequency has not yet been measured.
-- Forced latent-token diagnostics are engineering tests only and must never be mixed with baseline benchmark results.
+- Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Transfer and run the three step-06 diagnostic files. Return the `[VCOT_MONET_SITE]` lines, any `start_id/end_id/latent_size` runner initialization line, `RAW OUTPUT`, `TOKEN IDS`, and `FORCED PATH CHECK`. Do not start benchmark evaluation or V0 development until this runner-path check is resolved.
+Create `scripts/monet_site/sitecustomize.py` on the server, run the lightweight import preflight, and return its output. Do not reload Monet-7B until the preflight proves the Monet runner is active.
 
 ## Update Rule
-After every verified step, update this file with:
-- current branch or tag,
-- last verified result,
-- current task,
-- next action,
-- known blockers.
-
-This file describes operational state only. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
+After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
