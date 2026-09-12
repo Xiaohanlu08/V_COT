@@ -18,24 +18,37 @@ Establish a reproducible Monet baseline before implementing any new latent-super
 ## Last Verified State
 The V_COT repository has been initialized and the official Monet upstream source/commit has been pinned in project documentation.
 
-The target 4 x RTX 3090 server is **not fully offline**. It can access ordinary mainland/domestic Internet resources and can create/install Python environments, but direct overseas access such as GitHub is unavailable or unreliable. Therefore the active setup guide is now `RESTRICTED_NETWORK_SETUP.md`; `OFFLINE_SETUP.md` is retained only as a fallback for a truly air-gapped machine.
+The target 4 x RTX 3090 server has **restricted overseas access**, not a full Internet outage.
+
+Verified on 2026-09-12:
+- TUNA PyPI mirror is reachable from the server (`HTTP/2 200`).
+- `https://hf-mirror.net` is reachable from the server (`HTTP/2 200`).
+- direct GitHub access fails with GnuTLS handshake errors.
+- `gh-proxy.com` and `ghfast.top` also fail with GnuTLS handshake errors from this server.
+- `gitclone.com` returned HTTP 502 during the test.
+
+Therefore GitHub source transport must be relayed through an Internet-connected machine, while Python packages and model checkpoints should be downloaded directly on the GPU server through the verified mirrors.
 
 No server-side Monet environment, model download, inference result, benchmark result, or modified method has yet been verified.
 
 ## Current Task
-Use a split transport strategy:
-- transfer small GitHub source trees (`V_COT` and pinned Monet) to the server through an Internet-connected machine or a future trusted domestic Git mirror;
-- create the Python environment directly on the server via domestic Conda/PyPI mirrors;
-- download `NOVAglow646/Monet-7B` directly on the server via `HF_ENDPOINT=https://hf-mirror.net` if reachable.
+1. Transfer the current `V_COT` repository to `~/work/V_COT` through an Internet-connected machine.
+2. Transfer Monet pinned at commit `08939998d3d643a73a316e349faa34f420429153` to `~/work/V_COT/third_party/Monet`.
+3. Run `scripts/01_prepare_restricted_env.sh` on the server.
+4. Inspect GPU driver/CUDA compatibility before installing Monet's heavy requirements.
 
 ## Next Milestones
 - [x] Select the exact Monet implementation to use as the baseline.
 - [x] Record the upstream repository URL and upstream commit SHA.
 - [x] Characterize the server network as restricted-overseas rather than fully offline.
+- [x] Verify TUNA PyPI availability from the server.
+- [x] Verify HF mirror availability from the server.
 - [ ] Transfer V_COT source to the server.
 - [ ] Transfer pinned Monet source to `third_party/Monet`.
-- [ ] Bootstrap the `vcot` Python environment successfully through domestic mirrors.
-- [ ] Download the official Monet-7B checkpoint through the configured Hugging Face mirror, or transfer it if the mirror is inaccessible.
+- [ ] Create the `vcot` Python 3.10 environment through domestic mirrors.
+- [ ] Verify GPU driver/CUDA compatibility for the Monet/vLLM dependency set.
+- [ ] Install the pinned Monet requirements.
+- [ ] Download the official Monet-7B checkpoint through `hf-mirror.net`.
 - [ ] Reproduce official inference on at least one provided example.
 - [ ] Observe/verify latent-mode generation behavior.
 - [ ] Reproduce the selected Monet benchmark baseline under documented settings.
@@ -57,12 +70,13 @@ None. V0 has not started.
 Environment bootstrap only; not yet an experiment.
 
 ## Known Issues
-- Direct GitHub access from the target server fails with GnuTLS handshake errors; GitHub should not be part of the server-side bootstrap path.
+- Direct GitHub access from the target server is unavailable; GitHub must not be part of the server-side bootstrap path.
 - Official Monet SFT scripts are written for 8 GPUs with DeepSpeed ZeRO-2; they will not be treated as a drop-in 4 x RTX 3090 recipe.
-- The project will not change package versions casually after bootstrap failures because Monet uses customized Transformers/vLLM code.
+- Monet pins `vllm==0.10.0` and uses customized Transformers/vLLM code. Heavy package installation will be done only after checking the server GPU driver and CUDA compatibility.
+- The project will not change package versions casually after bootstrap failures.
 
 ## Next Action
-Transfer the small V_COT and Monet source trees to the server, then follow `RESTRICTED_NETWORK_SETUP.md` to create the environment and download model weights through domestic mirrors. Return the requested GPU, Python, PyTorch, Monet SHA, and model-directory output before attempting inference or training.
+Relay V_COT and the pinned Monet source from an Internet-connected machine to the server. Then run `scripts/01_prepare_restricted_env.sh` and return the complete terminal output before installing Monet requirements or downloading the checkpoint.
 
 ## Update Rule
 After every verified step, update this file with:
