@@ -59,11 +59,11 @@ Verified dependency state:
 - `Levenshtein==0.27.1` installed with `--no-deps`.
 - `RapidFuzz==3.14.5` installed to satisfy Levenshtein under Python 3.10.
 - `pip check` returned `No broken requirements found.` after resolving RapidFuzz.
-- `imageio` has now been installed sufficiently for the import chain to advance past `vlmeval/dataset/mvbench.py`.
+- `imageio` has been installed sufficiently for the import chain to advance past `vlmeval/dataset/mvbench.py`.
+- `decord==0.6.0` has been installed sufficiently for the import chain to advance past `vlmeval/dataset/sitebench.py`.
 - The `.env` message emitted by `load_env` remains non-fatal and is not the blocker.
-- Full traceback now identifies the next blocker exactly as `ModuleNotFoundError: No module named 'decord'`.
-- The traceback reaches `vlmeval/dataset/sitebench.py`, which imports `decord`; this is another top-level dependency pulled in by VLMEvalKit's broad dataset import chain even though the current target benchmark is VStarBench.
-- The pinned VLMEvalKit `requirements.txt` specifies `decord>=0.6.0`.
+- Full traceback now identifies the next blocker exactly as `ModuleNotFoundError: No module named 'timeout_decorator'`.
+- The traceback reaches `vlmeval/dataset/mmmath.py`, which imports `timeout_decorator`; this is another top-level dependency pulled in by VLMEvalKit's broad dataset import chain even though the current target benchmark is VStarBench.
 
 Continue minimum-dependency bring-up based on actual traceback only. Do not install the full VLMEvalKit requirement set and do not alter Monet-critical package versions.
 
@@ -93,7 +93,7 @@ Continue minimum-dependency bring-up based on actual traceback only. Do not inst
 - Forced latent-token diagnostics are engineering tests only and must never be mixed with benchmark results.
 
 ## Next Action
-Install only `decord==0.6.0` with `--no-deps`, run `pip check`, then retry `import vlmeval` with full traceback capture. If the decord wheel itself is unavailable for this Python/platform combination, stop and inspect that exact installation error rather than changing versions or the core runtime.
+Install only `timeout-decorator` with `--no-deps`, run `pip check`, then retry `import vlmeval` with full traceback capture. Do not install any further package until that result is inspected.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
