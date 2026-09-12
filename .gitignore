@@ -1,0 +1,32 @@
+# External source trees and model/data assets
+third_party/
+models/
+data/
+checkpoints/
+outputs/
+wandb/
+
+# Runtime logs (keep Markdown experiment records in the repo)
+logs/*.log
+logs/*.txt
+!logs/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments / IDE
+.venv/
+venv/
+.env
+.vscode/
+.idea/
+
+# OS/editor
+.DS_Store
+*.swp
+*.swo
