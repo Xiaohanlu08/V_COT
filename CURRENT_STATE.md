@@ -1,10 +1,10 @@
 # Current State
 
 ## Project Stage
-Latent-state characterization / controlled visual-evidence intervention.
+V0 preparation: evidence-supported latent contrastive supervision.
 
 ## Current Objective
-Determine whether Monet's recurrent latent hidden states are selectively sensitive to task-relevant visual evidence under a mechanically aligned, outcome-blind multi-sample counterfactual protocol before starting V0 training.
+Translate the now-confirmed target-specific latent sensitivity signal into the minimal V0 SFT intervention defined in `PROJECT_GOAL.md`, without changing Monet's architecture or RL pipeline.
 
 ## Pinned Baseline
 - Monet: `NOVAglow646/Monet@08939998d3d643a73a316e349faa34f420429153`
@@ -15,92 +15,81 @@ Determine whether Monet's recurrent latent hidden states are selectively sensiti
 ## Verified Results So Far
 - Natural VStarBench latent triggering: `72/191 = 37.7%`; all natural segments length 10.
 - Paired latent-start suppression over the 72 naturally-triggered examples: after option-aware rescoring, baseline and latent-off are both `54/72 = 0.75`; McNemar exact `p=1.0`. No answer-level utility effect detected.
-- Exact recurrent latent tensor capture is verified: observation-only instrumentation captures the `10 x 3584` recurrent `st["pending"]` states without changing the baseline generation.
-- Fixed-prefix/fixed-trigger replay is mechanically valid. Original-image replay vs the natural reference on development position 0 gives mean cosine `0.9999062`, min cosine `0.9998059`, mean relative L2 `0.0133799`.
-- Crop-based positive-vs-negative evidence comparison on position 0 was not supported (`Delta_evidence=-0.0050027`) because crop/resize geometry dominated.
-- Full-image target-vs-sham occlusion on position 0 produced a promising target-specific signal: target cosine distance `0.00104058`, median sham distance `0.00048357`, specificity `+0.00055701`, target percentile `96.875`, only `1/32` sham masks >= target, empirical one-sided `p=0.0606061`. This remains a development-sample result only.
-- Triggered-72 annotation audit mapped `69/72`; all 41 mapped `direct_attributes` cases have exactly one target and one bbox. Three repeated generic color questions at positions `29,49,61` remain unresolved and are excluded rather than manually resolved after outcomes.
+- Exact recurrent latent tensor capture is verified: observation-only instrumentation captures the `10 x 3584` recurrent `st["pending"]` states without changing baseline generation.
+- Fixed-prefix/fixed-trigger replay is mechanically valid. On development position 0, original-image replay vs the natural reference gives mean cosine `0.9999062`, min cosine `0.9998059`, mean relative L2 `0.0133799`.
+- Crop-based positive-vs-negative evidence comparison on position 0 was rejected as geometry-confounded (`Delta_evidence=-0.0050027`).
+- Full-image target-vs-sham occlusion on development position 0 produced a promising target-specific signal and motivated confirmatory replication.
+- Triggered-72 annotation audit mapped `69/72`; all 41 mapped `direct_attributes` cases have exactly one target and one bbox.
 
 ## EXP-0010 — Outcome-Blind 12-Sample Cohort Freeze — COMPLETE
-Step 17 froze the confirmatory direct-attribute cohort before any additional target-occlusion outcomes were observed.
-
-Selection rule:
-- naturally triggered;
-- `category=direct_attributes`;
-- official annotation resolved;
-- exactly one target and one bbox;
-- valid local image/bbox metadata;
-- baseline latent segment length 10;
-- development position 0 excluded;
-- fixed `random.Random(20260913)` selection over sorted eligible samples.
-
-Audit result:
-```text
-mapped_rows_total: 72
-eligible_candidate_count: 39
-unresolved excluded: 3
-relative_position excluded: 28
-development position 0 excluded: 1
-invalid image/bbox metadata excluded: 1
-invalid latent segment excluded: 0
-```
-
-Frozen positions:
+Frozen confirmatory positions:
 ```text
 [6, 11, 22, 23, 27, 53, 57, 59, 67, 71, 102, 112]
 ```
-
-Frozen annotation files:
-```text
-direct_attributes/sa_9019.json
-direct_attributes/sa_5413.json
-direct_attributes/sa_10919.json
-direct_attributes/sa_26968.json
-direct_attributes/sa_23893.json
-direct_attributes/sa_29509.json
-direct_attributes/sa_28073.json
-direct_attributes/sa_38195.json
-direct_attributes/sa_30935.json
-direct_attributes/sa_10701.json
-direct_attributes/sa_86882.json
-direct_attributes/sa_7683.json
-```
-
 Frozen cohort SHA-256:
 `f65ebdbefc8a73276877f4096d5cb8897339447c91a31dc68322a811dda487e4`
 
-The cohort must not be changed based on subsequent specificity outcomes.
+The cohort was selected before any new target-occlusion outcomes were observed. Development position 0 was excluded.
 
-## Step 18 — Confirmatory 12-Sample Target-vs-Sham Occlusion PREPARED
-Pre-outcome protocol is frozen in:
-`protocols/CONFIRMATORY_OCCLUSION_12.md`
+## EXP-0011 — Confirmatory 12-Sample Target-vs-Sham Occlusion — PRIMARY GATE PASSED
+Pre-outcome protocol: `protocols/CONFIRMATORY_OCCLUSION_12.md`.
 
-Implemented:
-- `scripts/18_make_confirmatory_runner.py`
-- `scripts/18_vstar_confirmatory_occlusion12.py`
-- `scripts/18_vstar_confirmatory_occlusion12.sh`
+Per sample, the exact natural pre-latent prefix was replayed, the original image was required to naturally predict `151666=<abs_vis_token>` at the fixed boundary before override, and aligned `10 x 3584` recurrent states were compared under one target mask and 32 deterministic same-size sham masks.
 
-Per sample:
-1. replay the exact natural pre-latent token prefix as `prompt_token_ids`;
-2. verify that, on the original image, the pre-force greedy next token is already `151666=<abs_vis_token>`;
-3. force only the first replay token to latent-start for all visual conditions;
-4. capture aligned `10 x 3584` recurrent latent states;
-5. compare full-image target occlusion against 32 same-size sham occlusions;
-6. deterministic sham seed is `20260913 + dataset_position`;
-7. per-sample specificity is `target_distance - median(sham_distance)`.
-
-Primary confirmatory cross-sample rule, frozen before execution:
+Mechanical validity:
 ```text
-all 12 samples mechanically valid
+mechanically_valid_samples: 12
+mechanically_invalid_samples: 0
+all_12_mechanically_valid: true
+```
+
+Cross-sample results:
+```text
+positive specificity: 10/12
+negative specificity: 2/12
+specificity mean:   +0.0008347084
+specificity median: +0.0004564524
+target percentile mean:   83.8542
+target percentile median: 100.0
+exact one-sided sign-test p: 0.019287109375
+exact sign-flip mean p:      0.0009765625
+primary_hypothesis_supported: true
+```
+
+Frozen primary rule:
+```text
+all 12 mechanically valid
 AND median specificity > 0
 AND exact one-sided sign-test p < 0.05
 ```
-With 12 non-tied samples, the sign test requires at least 10 positive specificity values. Secondary analysis is an exact `2^12` sign-flip test on mean specificity.
+All three conditions were satisfied. The result is therefore a confirmed multi-sample signal, under the pre-specified direct-attribute/full-image-neutral-occlusion protocol, that masking task-relevant target evidence perturbs Monet's aligned recurrent latent trajectory more than matched nuisance occlusions.
 
-No sample may be replaced because of a weak or negative result. Mechanical failures are reported, not substituted.
+The result must still **not** be described as proof that latent reasoning is useful for answers or as universal visual grounding. The earlier latent-off experiment found no answer-level correctness effect. What is now supported is the narrower causal premise required for V0: recurrent latent states are selectively sensitive to task-relevant visual evidence on this direct-attribute protocol.
+
+## V0 Gate Decision
+The pre-specified evidence gate for beginning V0 is **OPEN**.
+
+This means it is now justified to implement the minimal SFT-only experiment in `PROJECT_GOAL.md`:
+1. construct evidence-preserving and evidence-destroying visual views;
+2. extract corresponding latent states;
+3. add latent contrastive/evidence supervision;
+4. keep architecture and RL unchanged;
+5. evaluate against a matched reproduced Monet baseline before any move to V1/V2.
+
+The confirmatory VStarBench cohort remains evaluation/probing evidence and must not be used as V0 training data.
+
+## Monet V0 Integration Facts — UPSTREAM VERIFIED
+Official Monet Stage 3:
+- precomputes teacher latent embeddings with `src.precompute_teacher_latents`;
+- trains through `src.main` with `CustomTrainerSFT_STAGE3`;
+- `CustomTrainerSFT_STAGE3` first performs a latent forward to obtain `ce_patch_vec`, then a CE/alignment forward;
+- Stage-3 student image tensors are built in `collate_fn_sft_stage3` from user/question images only;
+- the official Stage-3 objective is `student_ce_loss + alignment_weight * alignment_loss`.
+
+These are the minimal hook points for V0. V0 should extend Stage 3 rather than create a separate architecture.
 
 ## Formal Evaluation Caveat
-Monet's README requests a supplementary API judge but does not identify the exact judge model/configuration. Local option-aware rescoring is deterministic but is not that under-specified API judge. This does not block latent-state evidence experiments.
+Monet's README requests a supplementary API judge but does not identify the exact judge model/configuration. Local option-aware rescoring is deterministic but is not that under-specified API judge. This does not block V0 implementation, but final benchmark claims must use a fixed documented evaluator.
 
 ## Next Milestones
 - [x] Pin Monet / runtime / benchmark path.
@@ -109,13 +98,15 @@ Monet's README requests a supplementary API judge but does not identify the exac
 - [x] Capture exact recurrent latent hidden tensors without changing generation.
 - [x] Validate fixed-prefix/fixed-trigger replay.
 - [x] Reject crop-based evidence comparison as geometry-confounded on sample 0.
-- [x] Obtain promising full-image target-vs-sham specificity on sample 0.
-- [x] Audit official annotation mapping for the 72 naturally-triggered samples.
-- [x] Freeze the outcome-blind 12-sample direct-attribute confirmatory cohort.
-- [ ] Run Step 18 confirmatory full-image target-vs-sham occlusion over the frozen cohort.
-- [ ] Apply the pre-specified cross-sample sign test and exact sign-flip secondary test.
-- [ ] Design a separate relation-aware intervention for relative-position samples if needed.
-- [ ] Start V0 only if the confirmatory evidence gate is supported.
+- [x] Obtain promising development-sample full-image target-vs-sham specificity.
+- [x] Audit official annotations and freeze an outcome-blind confirmatory cohort.
+- [x] Pass the pre-specified 12-sample target-specificity confirmatory gate.
+- [ ] Audit local Monet SFT Stage-3 assets/checkpoints/dataset availability before modifying training code.
+- [ ] Implement V0 as a minimal Stage-3 extension with evidence-aware latent contrastive loss.
+- [ ] Run a tiny deterministic V0 smoke test before any multi-GPU training.
+- [ ] Reproduce a matched Monet training/evaluation baseline under the same local setup.
+- [ ] Run V0 pilot and compare against the matched baseline.
+- [ ] Move to V1/V2 only if V0 improves the predefined aggregate benchmark metric.
 
 ## Next Action
-Run only Step 18 on the frozen cohort. Do not change the cohort, target operator, sham count, seed rule, or primary statistic after observing outcomes.
+Do not run more VStarBench occlusion probes and do not alter the confirmatory cohort. The next task is a no-training audit of local Monet Stage-3 training assets and exact source hook points, followed by a tiny V0 implementation/smoke test. Do not start full V0 training yet.
