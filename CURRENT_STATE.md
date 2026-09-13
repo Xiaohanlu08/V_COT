@@ -4,7 +4,7 @@
 Baseline reproduction / latent-utility characterization.
 
 ## Current Objective
-Establish a reproducible Monet baseline and determine whether naturally emitted latent states are useful, visually grounded, and suitable targets for selective supervision.
+Establish a reproducible Monet baseline and determine whether naturally emitted latent states are visually grounded and suitable targets for selective supervision.
 
 ## Current Branch
 `main`
@@ -41,125 +41,73 @@ triggered_samples: 72/191 = 0.3769633508 (~37.7%)
 balanced_marker_samples: 191/191
 multi_segment_samples: 0/191
 all 72 latent segments have length 10
-overall diagnostic option accuracy: 116/191 = 0.60733
 ```
 
-Triggered (`n=72`): diagnostic correct `34/72 = 0.472222`, mean tokens `79.778`.
-Non-triggered (`n=119`): diagnostic correct `82/119 = 0.689076`, mean tokens `45.773`.
+The original simple boxed-option parser produced diagnostic accuracy `116/191 = 0.60733`, but later auditing showed that this parser is not reliable for Monet outputs that place semantic answer text rather than the option letter inside `\boxed{}`. Therefore old diagnostic accuracy values are retained only as historical diagnostics and should not be used for scientific conclusions.
 
-Observational association tests:
-```text
-Fisher exact trigger vs diagnostic correctness: p = 0.0036791367
-Mann–Whitney generated-token count: p = 1.968701622239151e-24
-```
-
-Category trigger rates are similar (`direct_attributes` 38.3%, `relative_position` 36.8%). Trigger status is endogenous, so these observational differences do not establish latent utility or harm.
-
-## Paired Latent-Suppression Ablation — INTERVENTION VERIFIED, UTILITY JUDGMENT NOT YET FINAL
-Recorded as `EXP-0004`.
+## Paired Latent-Suppression Ablation — INTERVENTION VERIFIED; NO DETECTABLE CORRECTNESS EFFECT AFTER RESCORING
+Recorded as `EXP-0004` and rescored with `scripts/11_rescore_paired_outputs.py`.
 
 ### Intervention implementation
-The validated implementation uses vLLM `allowed_token_ids` to allow the full model vocabulary except exactly token ID `151666=<abs_vis_token>`. Model vocabulary size is `151670`, leaving `151669` allowed IDs including latent-end ID `151667`.
+The validated intervention uses vLLM `allowed_token_ids` to allow the full model vocabulary except exactly token ID `151666=<abs_vis_token>`. Model vocabulary size is `151670`, leaving `151669` allowed IDs including latent-end ID `151667`.
 
-The original `bad_words` implementation failed before generation because vLLM 0.10.0 calls `tokenizer.max_token_id`, which is absent from the installed `Qwen2TokenizerFast`. The environment was not modified.
-
-Full intervention on all 72 naturally-triggered baseline samples:
+Intervention integrity over all 72 naturally-triggered examples:
 ```text
 exact_exclusion_verified_samples: 72/72
 block_verified_samples: 72/72
-baseline diagnostic correct: 34/72 = 0.472222
-latent-off diagnostic correct: 24/72 = 0.333333
-raw diagnostic delta: -0.138889
-correct -> correct: 18
-correct -> wrong:   16
-wrong   -> correct: 6
-wrong   -> wrong:   32
-McNemar exact two-sided p = 0.052478790283203125
-baseline mean tokens: 79.7778
-latent-off mean tokens: 80.3333
+VSTAR_LATENT_OFF_ABLATION_PASS=True
 ```
 
-### Category-level paired analysis
-`direct_attributes` (`n=44`):
+### Parser audit
+The original diagnostic parser was heavily confounded by answer formatting:
+- 18/22 originally discordant pairs contained `None` on one side.
+- Manual inspection showed that most such cases expressed the same semantic answer using option text rather than an option letter.
+- `position 61` also exposed a non-`None` parser error: the old parser reported `A`, while the raw latent-off output explicitly ended with `FINAL ANSWER: C. golden`.
+
+This motivated deterministic option-aware rescoring of all 72 paired baseline/latent-off raw outputs using the real VStarBench option strings.
+
+### Option-aware rescoring result
 ```text
-baseline diagnostic accuracy: 25/44 = 0.568182
-latent-off diagnostic accuracy: 16/44 = 0.363636
-delta: -0.204545
-correct->wrong: 13
-wrong->correct: 4
-McNemar exact p = 0.049041748046875
-mean tokens: 78.500 -> 76.909
+n: 72
+changed_parse_samples: 49
+baseline correct:   54/72 = 0.750000
+latent-off correct: 54/72 = 0.750000
+delta (latent-off - baseline): 0.000000
+
+correct -> correct: 50
+correct -> wrong:    4
+wrong   -> correct:  4
+wrong   -> wrong:   14
+
+McNemar exact two-sided p = 1.0
+unresolved baseline outputs: 0
+unresolved latent-off outputs: 2 (positions 0 and 34)
+VSTAR_OPTION_AWARE_RESCORE_PASS=True
 ```
 
-`relative_position` (`n=28`):
-```text
-baseline diagnostic accuracy: 9/28 = 0.321429
-latent-off diagnostic accuracy: 8/28 = 0.285714
-delta: -0.035714
-correct->wrong: 3
-wrong->correct: 2
-McNemar exact p = 1.0
-mean tokens: 81.786 -> 85.714
-```
+The two unresolved latent-off cases cannot overturn the main paired conclusion: even if both were ultimately correct, the latent-off accuracy would increase only to `56/72 = 0.7778`, and the discordant-pair balance would still not provide evidence that suppressing latent entry systematically helps or harms correctness.
 
-### Critical parser confound discovered
-The category audit exposed that most discordant correctness flips are not clean option-to-option changes under the current diagnostic parser:
-- of 16 `correct->wrong` flips, 13 have `latent_off_predicted_option_diagnostic=None`;
-- of 6 `wrong->correct` flips, 5 have `baseline_predicted_option_diagnostic=None`;
-- therefore 18/22 (81.8%) discordant pairs involve a parser failure (`None`) on one side.
+### Scientific interpretation
+The latent-start suppression intervention is technically clean, but after correcting answer-format parsing there is **no detectable paired correctness effect** on these 72 naturally-triggered VStarBench examples (`54/72` vs `54/72`, McNemar `p=1.0`). Therefore the earlier apparent 13.9-point drop under latent suppression was a parser artifact and must not be used as evidence that latent access improves answer correctness.
 
-## Manual audit of the 18 `None`-discordant pairs — COMPLETE
-The stored raw outputs were manually audited against their semantic answer text. Sixteen of the 18 apparent flips are answer-format/parser artifacts: both baseline and latent-off responses give the same semantically correct answer, but one side outputs an answer word such as `\boxed{purple}`, `\boxed{silver}`, `\boxed{left}`, or an unboxed semantic answer rather than an option letter.
-
-Two cases are genuine semantic flips:
-- position 61 (`direct_attributes`, GT A): baseline says `white`, which corresponds to option A; latent-off explicitly says `FINAL ANSWER: C. golden` -> genuine `correct->wrong`;
-- position 92 (`direct_attributes`, GT D): baseline says `brown` while option D is `black`; latent-off gives `\boxed{D}` / black -> genuine `wrong->correct`.
-
-This audit also exposed a more serious bug in the old heuristic parser: at position 61 the latent-off raw text explicitly ends in `FINAL ANSWER: C. golden`, yet the old parser returned `A` because it scanned unrestricted prose for any standalone A-D token and matched an earlier article `a`. Therefore non-`None` outputs cannot automatically be trusted either.
-
-If only the 18 audited pairs are corrected while all other old labels are provisionally left unchanged, the paired table becomes:
-```text
-correct -> correct: 34
-correct -> wrong:   4
-wrong   -> correct: 2
-wrong   -> wrong:   32
-provisional McNemar exact p = 0.6875
-```
-This provisional table is **not final**, because the position-61 failure proves that the old parser can also return an incorrect non-`None` letter.
-
-## Option-aware rescoring — IMPLEMENTED, NOT YET RUN
-New scripts:
-- `scripts/11_rescore_paired_outputs.py`
-- `scripts/11_rescore_paired_outputs.sh`
-
-The new resolver does not rerun Monet. It reloads the stored 72 paired raw outputs and the VStarBench options, then applies conservative precedence:
-1. final `\boxed{...}` letter;
-2. final `\boxed{answer text}` matched to option text;
-3. explicit `FINAL ANSWER:` / `ANSWER:` marker;
-4. conservative semantic matching over the final answer-like sentences;
-5. unresolved if ambiguous.
-
-It outputs a new rescored JSONL and summary without modifying the original experiment files.
+This does not imply that Monet's latent states are useless. It means token-level answer accuracy under this intervention is approximately neutral at this scale. The central unanswered question is now more specific and more important for V_COT: whether the latent hidden states themselves encode and respond to task-relevant visual evidence.
 
 ## Formal Baseline Reproduction Caveat
-Monet's README says exact matching was replaced by an API judge and instructs users to apply an API model as a supplementary judge, but the evaluation section does not identify the exact judge model/configuration. Current local scoring is diagnostic only and must not be compared directly with the reported Monet VStarBench score.
+Monet's README says exact matching was replaced by an API judge and instructs users to apply an API model as a supplementary judge, but the evaluation section does not identify the exact judge model/configuration. Current local option-aware rescoring is deterministic and substantially more reliable than the original parser, but it is still not the official supplementary API judge and should not be compared directly with the paper's reported VStarBench score.
 
 ## Next Milestones
 - [x] Pin Monet implementation and checkpoint.
 - [x] Reproduce runtime and official inference path.
 - [x] Verify latent token IDs and runner patch.
 - [x] Bring up pinned VLMEvalKit.
-- [x] Verify VStarBench dataset/prompt path.
 - [x] Characterize natural latent triggering over all 191 examples.
 - [x] Implement and validate exact latent-start suppression.
 - [x] Run paired latent-off intervention over all 72 naturally-triggered examples.
-- [x] Analyze paired intervention by category and transition type.
-- [x] Identify diagnostic-parser confounding in the paired correctness analysis.
-- [x] Manually audit all 18 discordant pairs involving `None`.
-- [ ] Run option-aware rescoring over all 72 stored paired outputs and audit any remaining unresolved cases.
-- [ ] Recover or document the supplementary API judge protocol sufficiently for formal baseline-score reproduction.
-- [ ] Freeze the reproduced baseline with a Git tag once scoring is documented.
-- [ ] Locate/instrument exact latent-state tensors.
+- [x] Audit and repair answer parsing with option-aware rescoring.
+- [x] Establish that paired correctness is neutral under the local robust scorer.
+- [ ] Recover/document the supplementary API judge protocol if possible.
+- [ ] Locate/instrument the exact latent-state tensors consumed by Monet's recurrent latent path.
+- [ ] Run a single-sample tensor-capture engineering validation.
 - [ ] Run no-training positive/evidence-preserving vs negative/evidence-destroying visual-view latent separability test.
 - [ ] Start V0 only if the separability/utility gate is supported.
 
@@ -169,10 +117,9 @@ Monet's README says exact matching was replaced by an API judge and instructs us
 - Windows-to-Linux transfers can introduce CRLF.
 - vLLM shutdown may emit non-fatal NCCL/resource-tracker warnings.
 - Monet evaluation README requires an API judge but does not identify the exact judge model in the evaluation section.
-- The original V_COT diagnostic option parser is known to mis-handle answer-text outputs and can even misread an unboxed final answer letter by matching an earlier article `a`; it must not be used for final paired utility claims.
 
 ## Next Action
-Do not rerun Monet. Transfer/run Step 11 to rescore all 72 stored paired outputs with the option-aware resolver. Inspect its unresolved positions and recompute the paired transition table. Only after that scoring audit is stable should the project move to exact latent-tensor instrumentation and the positive/negative visual-evidence separability test. Do not start V0 training yet.
+Stop extending token-level trigger/suppression statistics. Instrument the exact hidden-state vectors that Monet stores as `st["pending"]` and then consumes through `self.inputs_embeds.index_copy_` during latent mode. First validate tensor capture on one known naturally-triggered VStarBench sample without changing generation. Only after that engineering gate passes should positive/evidence-preserving and negative/evidence-destroying image interventions be introduced.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
