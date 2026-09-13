@@ -91,38 +91,47 @@ positive/student view: original full source image
 negative/student view: same full image with recovered evidence region neutral-occluded
 teacher target: official helper-derived cached Stage-3 teacher representation
 ```
-The negative-image operator is now frozen. Do not return to the failed disjoint-sham operator unless new pre-specified evidence justifies it.
+The negative-image operator is frozen. Do not return to the failed disjoint-sham operator unless new pre-specified evidence justifies it.
 
-## Official Monet Stage-3 Facts
-Official Stage 3:
-- generates student recurrent latents from the student image branch;
-- exposes `student_outputs_latent.ce_patch_pos` and `ce_patch_vec`;
-- injects them into the second CE/alignment forward;
-- loads cached teacher representations through `teacher_latent_dir`;
-- optimizes `student_ce_loss + alignment_weight * alignment_loss`.
+## EXP-0018 — Corrected Stage-3 Loss Contract Audit — PASSED
+Step 25 initially aborted because the audit incorrectly required `ce_patch_vec` to appear in `precompute_teacher_latents.py`. That requirement was invalid and produced no scientific result.
 
-The official Stage-3 recipe precomputes teacher targets from the Stage-2 model with `--output_hidden_states` and then trains Stage 3 with `--alignment_layer all_layers`. Therefore the cached teacher target is not required to be `ce_patch_vec`; it is saved hidden-state output under the file key `latent`.
+Step 25b corrected only the audit specification and passed on the pinned Monet SHA. Verified static contracts:
+- teacher precompute uses the Stage-2 model with `--output_hidden_states`;
+- precompute reads `outputs.hidden_states` and saves each sample under dictionary key `latent`;
+- official Stage 3 trains with `--alignment_layer all_layers`;
+- student latent forward generates `ce_patch_pos` and `ce_patch_vec` from the student-image branch;
+- `ce_patch_vec[b]` is returned as `Tensor(num_latents_b, H)` and is injected into the corresponding latent-token positions in the second forward;
+- `student_alignment_poss` are the latent-pad positions in the Stage-3 student sequence;
+- the second forward computes all-layer hidden states at those positions and compares them with cached teacher hidden states using mean cosine distance;
+- official Stage-3 objective remains `student_ce_loss + alignment_weight * alignment_loss`;
+- no official negative-image branch exists.
 
-## Step 25 — STATIC AUDIT SCRIPT INVALID, NOT A MONET FAILURE
-The first Step-25 audit aborted because it incorrectly required the string `ce_patch_vec` to appear inside `src/precompute_teacher_latents.py`.
+Important correction: `affine_subspace_alignment_loss` exists in the model source, but source search finds no official Stage-3 call site. The active Stage-3 alignment path calls `alignment_loss(...)`, i.e. all-layer cosine alignment at the latent positions. Do not treat affine-subspace alignment as the official Stage-3 training objective.
 
-That requirement was wrong. In the pinned official implementation:
+## Candidate V0 Loss — NARROWED, NOT YET FROZEN
+The evidence term should be defined in the same representation space as the official Stage-3 teacher alignment rather than directly assuming cosine similarity on raw `ce_patch_vec`.
+
+The most faithful candidate is an alignment-ranking term:
 ```text
-teacher precompute: outputs.hidden_states  (official recipe uses --output_hidden_states)
-student Stage-3 latent forward: ce_patch_pos / ce_patch_vec
-cached teacher file key: latent
-Stage-3 alignment_layer: all_layers
+D_pos = official all-layer teacher-alignment distance for original-image branch
+D_neg = corresponding teacher-alignment distance for evidence-occluded branch
+L_evidence = ranking/gating function of D_pos versus D_neg
 ```
-So Step 25 produced no scientific result and does not indicate a source-code or training-path failure. Step 25b corrects only the audit specification.
-
-## Candidate V0 Loss — NOT YET FROZEN
-Conceptually, the smallest extension remains:
+with the original objective preserved:
 ```text
-L_V0 = L_CE + lambda_align * L_align + lambda_evidence * L_evidence
+L_V0 = L_CE + lambda_align * D_pos + lambda_evidence * L_evidence
 ```
-where the evidence term compares the original-image student latent against the evidence-occluded student latent relative to the official teacher target.
+The exact ranking form, stop-gradient choice, margin/temperature, reduction, and weight are not frozen.
 
-Do not yet freeze direct cosine/triplet/ranking details. The official model contains `affine_subspace_alignment_loss`, and runtime shape/nesting/reduction must be inspected before defining the evidence loss.
+## Runtime Probe Requirements
+Before freezing `L_evidence`, verify at runtime on the smallest feasible local path:
+- exact type/nesting/shape of `student_outputs_latent.ce_patch_vec`;
+- exact type/nesting/shape of cached/teacher-style all-layer targets;
+- exact relation among latent count, `student_alignment_poss`, and teacher alignment positions;
+- scalar/reduction behavior of the active all-layer cosine alignment;
+- peak GPU memory and runtime for adding an occluded negative latent branch;
+- whether a no-grad negative branch is enough for the first V0 pilot or a fully differentiable negative branch is feasible on 24 GB GPUs.
 
 ## Active Constraints
 - No architecture change.
@@ -130,7 +139,8 @@ Do not yet freeze direct cosine/triplet/ranking details. The official model cont
 - Visual_CoT only for the first V0 operator.
 - VStar confirmatory samples remain probing/evaluation only, never training data.
 - Do not change the frozen Step-24 negative operator after outcome inspection.
-- Do not download/rebuild Stage1/2 assets until the minimum runtime probe requirements are clear.
+- Do not mistake the unused affine-subspace helper for the official Stage-3 alignment path.
+- Do not download/rebuild Stage1/2 assets before proving they are required for the runtime probe.
 - Any continued-SFT V0 experiment must have a matched continued-SFT control with identical data/steps except the new evidence loss.
 
 ## Next Milestones
@@ -140,11 +150,12 @@ Do not yet freeze direct cosine/triplet/ranking details. The official model cont
 - [x] Validate Visual_CoT crop recoverability.
 - [x] Reject universal disjoint sham crops.
 - [x] Validate and freeze full-image recovered-evidence neutral occlusion.
-- [ ] Complete corrected Step-25b static Stage-3 loss-contract audit.
-- [ ] Determine the minimum published assets needed for a runtime tensor-shape/memory probe.
+- [x] Complete corrected Step-25b static Stage-3 loss-contract audit.
+- [ ] Run the minimum local runtime shape/memory probe using existing assets first.
+- [ ] Decide whether any published SFT checkpoint/teacher asset download is actually required.
 - [ ] Freeze the exact V0 evidence loss only after the runtime probe.
 - [ ] Run a tiny deterministic smoke test.
 - [ ] Run matched continued-SFT baseline vs V0 pilot.
 
 ## Next Action
-Run Step 25b. Treat `precompute_mentions_ce_patch_vec=false` as expected: official teacher precompute uses hidden states, while `ce_patch_vec` belongs to the student Stage-3 latent forward.
+Use the existing local `models/Monet-7B` and already extracted Visual_CoT sample assets for the smallest runtime probe possible. Do not download the 16.6 GB Stage-2/Stage-3 checkpoint merely to inspect tensor shapes; only escalate to those assets if the local architecture-identical probe cannot establish the required runtime contract.
