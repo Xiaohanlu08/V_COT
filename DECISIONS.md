@@ -121,17 +121,32 @@ This file records project-level decisions so that rejected ideas are not acciden
 ---
 
 ## D011 — Use Visual_CoT as the first V0 evidence family and same-source matched shams as the candidate negative principle
-**Status:** ACTIVE / NEGATIVE OPERATOR PENDING STEP 23 MECHANICAL VALIDATION
+**Status:** SUPERSEDED BY D012
 
 **Decision:** Restrict the first V0 pilot to the `Visual_CoT` helper family rather than mixing all six Monet-SFT-125K transformation families. Use the official helper crop as positive evidence and validate a negative constructed from the same source image with matched crop geometry and no overlap with the positive-evidence region.
 
 **Evidence:** `Visual_CoT` contributes `118561/125072 = 94.7942%` of the official SFT data. The frozen 64-sample robust crop-recoverability audit passed unchanged thresholds: `64/64` pairs valid, `61/64 = 0.953125` strong recoverable, median same-source NCC `0.9923841`, and median same-minus-wrong margin `0.5103442`.
 
-**Reason:** This construction directly controls the two major confounds already observed in the project. A same-source negative avoids sample-identity discrimination from unrelated images, and a same-geometry crop avoids the full-image-vs-crop geometry confound seen in EXP-0007. The other Monet helper families contain annotation, highlighting, state-transition, or geometry-construction transforms and therefore require separate operators.
+**Reason:** This construction directly controlled sample identity and crop geometry.
 
-**Constraint:** The exact same-source sham rule is not frozen until Step 23 passes its pre-specified mechanical gate. Do not start V0 training before that validation.
+**Superseded because:** Step 23 failed its pre-specified mechanical gate: only `44/61 = 0.7213114754` strong samples had at least eight valid same-size disjoint sham positions. Seventeen samples were structurally nonconstructible, mainly because the recovered evidence crop occupied too much of the source image.
 
-**Revisit condition:** Reopen if Step 23 fails mechanically, if the resulting V0 pilot shows no matched improvement, or if a later validated operator can safely include additional helper families.
+---
+
+## D012 — Reject universal disjoint sham crops; validate full-image recovered-evidence neutral occlusion as the V0 negative
+**Status:** ACTIVE / DATA OPERATOR PENDING MECHANICAL VALIDATION
+
+**Decision:** Keep `Visual_CoT` as the first V0 evidence family, but reject the exact D011 same-source disjoint sham-crop operator as the universal first negative. The next V0 negative candidate is a full-image evidence-destroyed view: recover the task-relevant source region from the official helper crop, preserve the original source dimensions, and neutral-fill that recovered region using a local surrounding-ring RGB statistic.
+
+**Evidence:** Step 22b validated `Visual_CoT` helper recoverability on a frozen 64-sample cohort (`61/64` strong, median same-source NCC `0.9923841`, median same-minus-wrong margin `0.5103442`). Step 23 then failed the frozen disjoint-sham gate with only `44/61` constructible samples despite zero geometry violations and zero pixel-identical negatives among constructible cases.
+
+**Reason:** Full-image neutral occlusion is constructible even when the evidence region is large, preserves input geometry, remains same-sample, and directly avoids the crop/full-image geometry confound identified in EXP-0007. It also reuses the intervention family that previously produced target-specific latent sensitivity in the frozen VStarBench confirmatory experiments.
+
+**Constraint:** Do not start V0 training until this recovered-region full-image occlusion operator passes a dataset-level mechanical validation on the exact Step-22b strong cohort. Do not rescue D011 by post-hoc filtering to only the 44 constructible sham cases or by weakening the failed Step-23 thresholds.
+
+**Candidate loss after operator validation:** preserve official Stage-3 CE + teacher alignment, then test a teacher-anchored ranking term in which the original-source student latent must be more compatible with the helper-derived teacher latent than the evidence-occluded-source student latent. The exact tensor alignment, margin, reduction, and weight must be frozen only after auditing the official Stage-3 tensor shapes and loss implementation.
+
+**Revisit condition:** Reopen if the full-image occlusion operator is mechanically invalid on the frozen training-data cohort, or if the matched V0 pilot fails to improve the pre-defined evaluation.
 
 ---
 
