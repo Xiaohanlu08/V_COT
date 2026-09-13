@@ -45,51 +45,79 @@ local image size: 2000 x 1500
 ```
 
 ## EXP-0006 — Natural Three-View Evidence Pilot — ALIGNMENT FAILED
-Step 13 constructed:
-- `I`: original image.
-- `I+`: V* target-centered patch with `patch_scale=1.2`, resized to `2000 x 1500`.
-- `I-`: exact same crop/resize as `I+`, but the glove bbox was replaced by the surrounding-ring mean RGB.
-
-Verified geometry:
-```text
-crop_box_xyxy: [548, 126, 734, 314]
-crop_size_before_resize: [186, 188]
-local_target_bbox_xyxy: [16, 16, 171, 173]
-neutral_fill_rgb: [137, 128, 130]
-```
+Step 13 used the original image, a V* target crop (`patch_scale=1.2`), and the same crop with the target neutral-masked.
 
 Natural-generation result:
 ```text
-original: segment [25,35], 10 latent tensors, 99 generated tokens
-positive: no latent segment, 0 latent tensors, 89 generated tokens
-negative: segment [16,26], 10 latent tensors, 100 generated tokens
-original_generation_exact_match_baseline: true
+original: segment [25,35], 10 latent tensors
+positive crop: no latent segment
+negative masked crop: segment [16,26], 10 latent tensors
 all_three_naturally_triggered: false
-all_three_have_10_latents: false
-same_pre_latent_prefix_original_vs_positive: false
-same_pre_latent_prefix_original_vs_negative: false
+same_pre_latent_prefix: false
 same_latent_start_position: false
 aligned_natural_comparison_ready: false
-VSTAR_EVIDENCE_PILOT_CAPTURE_PASS=True
 ```
 
-The positive view did not naturally enter latent mode, while the negative view entered latent mode earlier. Therefore no `z(I)` / `z(I+)` / `z(I-)` similarity from Step 13 is scientifically interpretable. The result itself is useful evidence that visual intervention changes the model's latent-entry policy, but it does not answer whether the latent state is selectively grounded in target evidence.
+This shows the visual intervention changes Monet's latent-entry policy, but it does not permit direct latent-content comparison.
 
-## Step 14 — Fixed-Prefix / Fixed-Trigger Replay PREPARED
+## EXP-0007 — Fixed-Prefix / Fixed-Trigger Replay — MECHANICALLY VALID; ORIGINAL POSITIVE-NEGATIVE HYPOTHESIS NOT SUPPORTED ON SAMPLE 0
+Step 14 replayed the exact 25 baseline generated tokens preceding natural latent start as explicit `prompt_token_ids`, used identical textual prompt IDs for all visual conditions, and forced only the first subsequent token to `151666=<abs_vis_token>`.
+
+Mechanical alignment:
+```text
+prefix_generated_token_count: 25
+prefix_decode_encode_roundtrip_exact: true
+base_prompt_ids_identical_across_views: true
+chat_template_text_identical_across_views: true
+original: first_token=151666, segment=(0,10), latent_shape=(10,3584)
+positive: first_token=151666, segment=(0,10), latent_shape=(10,3584)
+negative: first_token=151666, segment=(0,10), latent_shape=(10,3584)
+mechanical_alignment_pass: true
+```
+
+Original-image replay reproduced EXP-0005 closely:
+```text
+mean cosine: 0.9999062
+min cosine: 0.9998059
+mean relative L2: 0.0133799
+valid_for_counterfactual_comparison: true
+```
+
+Counterfactual similarity:
+```text
+S_positive_mean: 0.9516485
+S_negative_mean: 0.9566512
+Delta_evidence = S_positive - S_negative: -0.0050027
+relative L2 original-positive: 0.3006730
+relative L2 original-negative: 0.2855321
+```
+
+Step-wise `Delta_evidence` was positive only at step 1 and negative at the remaining 9/10 steps. Mean positive-vs-negative cosine was approximately `0.9889295`, showing that the two crop-based interventions remain very similar to each other while both differ substantially more from the full original image.
+
+### Scientific interpretation
+The fixed-prefix/fixed-trigger method is mechanically validated. However, the initial single-sample hypothesis `sim(z(I), z(I+)) > sim(z(I), z(I-))` is **not supported** for position 0 under the crop-based intervention. The negative mean delta must not be reframed as a positive result.
+
+The pattern suggests crop/resize geometry is a larger latent perturbation than target masking in this pilot: `I+` and `I-` share crop geometry and are highly similar to each other, while both are much farther from the full-image anchor. This motivates a cleaner target-specificity test that keeps the full-image geometry fixed.
+
+## Step 15 — Full-Image Target Occlusion vs Matched Sham Occlusions PREPARED
 Implemented:
-- `scripts/14_make_fixed_trigger_runner.py`
-- `scripts/14_vstar_fixed_prefix_evidence_replay.py`
-- `scripts/14_vstar_fixed_prefix_evidence_replay.sh`
+- `scripts/15_vstar_target_occlusion_specificity.py`
+- `scripts/15_vstar_target_occlusion_specificity.sh`
 
 Protocol:
-1. Take the exact 25 generated token IDs preceding the natural latent-start token in the recorded baseline for position 0.
-2. Append those IDs directly as `prompt_token_ids`; do not rely on decoded-text retokenization.
-3. Use identical base prompt token IDs for `I`, `I+`, and `I-` while changing only the image payload.
-4. A temporary Monet runner patch overrides only the first sampled token of each replay request with `151666=<abs_vis_token>`; all subsequent sampling is untouched.
-5. Capture the same recurrent `st["pending"]` tensors as EXP-0005.
-6. Require all three replays to produce a latent segment `[0,10]` with `10 x 3584` tensors.
-7. Before interpreting visual comparisons, require the original-image fixed replay to reproduce the EXP-0005 trajectory with: mean cosine >= 0.999, minimum cosine >= 0.995, and mean relative L2 <= 0.05.
-8. Only if that replay gate passes, interpret step-aligned `S+`, `S-`, and `Delta_evidence = S+ - S-` as a single-sample counterfactual pilot.
+1. Keep the original `2000 x 1500` image geometry for every condition.
+2. Neutral-mask only the annotated glove box for the target intervention.
+3. Construct 32 deterministic same-size sham masks elsewhere in the same image, excluding the glove and one-box-width/height surrounding context.
+4. Each mask is filled with its own surrounding-ring mean RGB, so target and sham interventions use the same operator.
+5. Reuse the validated 25-token fixed prefix and one-time forced latent start from Step 14.
+6. Revalidate the original replay against EXP-0005 before interpretation.
+7. Measure latent perturbation as `1 - mean cosine(z_original, z_masked)` and compare the target mask against the empirical sham-mask distribution.
+
+Primary target-specificity statistic:
+```text
+specificity = target cosine distance - median sham cosine distance
+```
+A positive value means occluding the annotated target perturbs the latent trajectory more than a typical matched same-size nuisance occlusion. With 32 sham controls, the smallest attainable one-sided empirical p-value is `1/33 ≈ 0.0303`. This remains a single-sample pilot, not a benchmark-level significance claim.
 
 ## Formal Evaluation Caveat
 Monet's README requests a supplementary API judge but does not specify the exact judge model/configuration. Local option-aware rescoring is deterministic but is not the paper's under-specified API judge. This does not block latent-state evidence experiments.
@@ -101,10 +129,10 @@ Monet's README requests a supplementary API judge but does not specify the exact
 - [x] Capture exact recurrent latent hidden tensors without changing generation.
 - [x] Verify official target/bbox annotation for position 0.
 - [x] Run natural three-view evidence pilot and identify alignment failure.
-- [ ] Run Step 14 fixed-prefix / fixed-trigger replay.
-- [ ] Verify original-image replay against EXP-0005 tensor trajectory.
-- [ ] If replay gate passes, inspect `S+`, `S-`, and `Delta_evidence` for the pilot.
-- [ ] Expand to multiple annotated naturally-triggered samples only after the pilot protocol is mechanically valid.
+- [x] Validate fixed-prefix / fixed-trigger replay and original-image tensor reproduction.
+- [x] Establish that the crop-based `I+` vs `I-` hypothesis is not supported on sample 0.
+- [ ] Run Step 15 full-image target-vs-sham occlusion specificity pilot.
+- [ ] Expand to multiple annotated naturally-triggered samples only if Step 15 supports a target-specific signal.
 - [ ] Start V0 only if multi-sample evidence supports the visual-evidence gate.
 
 ## Known Issues
@@ -114,7 +142,7 @@ Monet's README requests a supplementary API judge but does not specify the exact
 - vLLM shutdown may emit non-fatal NCCL/resource-tracker warnings.
 
 ## Next Action
-Run only Step 14 fixed-prefix / fixed-trigger replay. Do not train V0 yet.
+Run only Step 15 target-vs-sham full-image occlusion specificity pilot. Do not train V0 yet.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
