@@ -1,10 +1,10 @@
 # Current State
 
 ## Project Stage
-Latent-state characterization / visual-evidence intervention preparation.
+Latent-state characterization / visual-evidence intervention pilot.
 
 ## Current Objective
-Determine whether Monet's recurrent latent hidden states are sensitive to task-relevant visual evidence and therefore suitable targets for selective supervision.
+Determine whether Monet's recurrent latent hidden states are selectively sensitive to task-relevant visual evidence and therefore suitable targets for selective supervision.
 
 ## Current Branch
 `main`
@@ -41,7 +41,7 @@ The original simple boxed-option parser was later shown to be unreliable for sem
 ## Paired Latent-Suppression Ablation — COMPLETE
 Recorded as `EXP-0004`.
 
-The technically validated intervention blocks exactly `151666=<abs_vis_token>` while leaving all other model-vocabulary IDs available. After option-aware rescoring of all 72 paired baseline/latent-off outputs:
+After option-aware rescoring of all 72 paired baseline/latent-off outputs:
 ```text
 baseline correct:   54/72 = 0.750000
 latent-off correct: 54/72 = 0.750000
@@ -64,7 +64,7 @@ Step 12 instruments a temporary copy of the pinned official Monet vLLM runner ex
 ```python
 st["pending"] = last_token_h[i].detach()
 ```
-These `pending` vectors are subsequently consumed through `self.inputs_embeds.index_copy_` as the next latent-step input embeddings. The live GPU tensor is unchanged; only rank-0 float32 CPU copies are saved.
+These vectors are subsequently consumed through `self.inputs_embeds.index_copy_` as the next latent-step input embeddings. The live GPU tensor is unchanged; only rank-0 float32 CPU copies are saved.
 
 Verified on naturally-triggered VStarBench position 0:
 ```text
@@ -82,31 +82,55 @@ adjacent_cosine_max: 0.9985483
 VSTAR_SINGLE_LATENT_TENSOR_PROBE_PASS=True
 ```
 
-The exact generated token sequence matched the previously recorded natural baseline. This verifies that the tensor instrumentation is observation-only for the tested sample and that the captured `10 x 3584` sequence is the recurrent latent state actually fed by Monet between latent decode steps.
+The exact generated token sequence matched the previously recorded natural baseline. This verifies observation-only tensor capture for the tested sample.
 
-Saved result:
+## Official V*Bench Evidence Annotation — VERIFIED
+The official annotation for VStarBench position 0 was fetched from `craigwu/vstar_bench`, file `direct_attributes/sa_4690.json`, and checked against the local image.
+
+Verified fields:
 ```text
-results/latent_capture/vstar_pos0_latents.pt
-results/latent_capture/vstar_pos0_latents_summary.json
-logs/12_vstar_single_latent_tensor_probe.log
+target_object: ['glove']
+bbox: [[564, 142, 155, 157]]   # <x,y,w,h>
+question: What is the material of the glove?
+local image size: 2000 x 1500
+annotation check: PASS
 ```
 
-## Interpretation of Step 12
-The high adjacent cosine similarity indicates a smooth recurrent trajectory overall, but the minimum adjacent cosine (`~0.613`) shows at least one comparatively large transition. These numbers are descriptive only; they do not establish visual grounding or usefulness.
+The official annotation options are semantic answer sentences and differ in ordering/format from the VLMEvalKit TSV options; the evidence pilot uses only the verified target object / bbox / question for visual intervention and keeps the existing VLMEvalKit prompt unchanged.
 
-The central scientific gate can now be tested directly: whether a task-evidence-preserving visual intervention keeps the latent trajectory closer to the original than an evidence-destroying intervention.
+## Step 13 — Natural Three-View Evidence Pilot IMPLEMENTED, NOT YET VERIFIED
+Implemented files:
+- `scripts/13_vstar_evidence_pilot.py`
+- `scripts/13_vstar_evidence_pilot.sh`
 
-## Evidence Intervention Design Constraint
-For a clean first test, the visual intervention should use benchmark-provided target annotations rather than a learned grounding model. The original V*Bench release documents per-sample `target_object` and `bbox` annotations in `<x,y,w,h>` format. The next step is to recover the official annotation for VStarBench position 0 (`direct_attributes/sa_4690`) and verify that it matches the local image before constructing matched positive/negative views.
+### View construction
+For the first pilot, use the benchmark-provided target box and the V* reference implementation's target-patch scale `1.2`:
+- `I`: original local VStarBench image.
+- `I+`: target-centered `1.2x` V* patch with evidence preserved, resized back to the original `2000 x 1500` dimensions.
+- `I-`: the exact same patch and resize transform as `I+`, but the annotated glove box is replaced by the RGB mean of its surrounding ring before resizing.
 
-Preferred first-pilot view construction after annotation verification:
-- `I`: original image.
-- `I+`: target-centered crop with context, target evidence preserved.
-- `I-`: the exact same crop and dimensions as `I+`, but the annotated target box is neutral-masked.
+Thus `I+` and `I-` share geometry and image dimensions; their intended differential factor is the annotated target evidence.
 
-This makes the positive and negative conditions share the same crop/context geometry, with the target evidence as the main differential factor.
+### Natural-alignment gate
+Step 13 intentionally does **not** force the latent token or replay a textual prefix yet. It first asks whether the three conditions naturally produce an already-aligned comparison under identical prompt/decoding settings.
 
-For the actual latent comparison, text-prefix/trigger timing should also be controlled. The planned protocol is to replay the exact baseline pre-latent generated token prefix and force only the latent-start event at the same position for `I`, `I+`, and `I-`. The original-image replay must first reproduce the Step-12 latent tensors before intervention comparisons are considered valid.
+The comparison is considered clean enough for an initial natural pilot only if all of the following hold:
+```text
+all three views naturally trigger exactly one latent segment
+all three capture exactly 10 latent tensors
+pre-latent generated token prefix matches original vs positive exactly
+pre-latent generated token prefix matches original vs negative exactly
+latent-start generated position is identical across all three views
+```
+
+If any condition fails, similarity values are exploratory only and the next step is fixed-prefix/fixed-trigger replay. If all conditions pass, compute step-aligned cosine similarities:
+```text
+S+ = mean_t cos(z_t(I), z_t(I+))
+S- = mean_t cos(z_t(I), z_t(I-))
+Delta_evidence = S+ - S-
+```
+
+The original view is also required to reproduce the saved natural baseline token sequence exactly under the instrumented runner.
 
 ## Formal Baseline Reproduction Caveat
 Monet's README requests a supplementary API judge but does not identify the exact judge model/configuration in the evaluation section. Local option-aware rescoring is deterministic but is not the paper's under-specified API judge. This does not block the latent-state evidence experiment.
@@ -118,11 +142,11 @@ Monet's README requests a supplementary API judge but does not identify the exac
 - [x] Validate exact latent-start suppression.
 - [x] Re-score paired latent-off outputs robustly and close answer-level utility line as neutral.
 - [x] Capture exact recurrent latent hidden-state tensors without changing generation.
-- [ ] Recover and verify official V*Bench bbox/target annotation for pilot sample 0.
-- [ ] Generate matched `I+` / `I-` evidence interventions for sample 0.
-- [ ] Implement fixed-prefix / fixed-trigger latent replay and verify original-image latent reproduction.
-- [ ] Compare `z(I)`, `z(I+)`, `z(I-)` with step-aligned and sequence-level similarity metrics.
-- [ ] Expand to multiple annotated naturally-triggered samples only if the pilot protocol is mechanically valid.
+- [x] Verify official V*Bench bbox/target annotation for pilot sample 0.
+- [ ] Run Step 13 natural three-view evidence pilot.
+- [ ] If natural prefix/trigger alignment fails, implement fixed-prefix / fixed-trigger latent replay and verify original-image latent reproduction.
+- [ ] Compare `z(I)`, `z(I+)`, `z(I-)` under a mechanically aligned protocol.
+- [ ] Expand to multiple annotated naturally-triggered samples only if the pilot protocol is valid.
 - [ ] Start V0 only if the visual-evidence separability/utility gate is supported.
 
 ## Known Issues
@@ -133,7 +157,7 @@ Monet's README requests a supplementary API judge but does not identify the exac
 - Monet evaluation README requires an API judge but does not identify the exact judge model in the evaluation section.
 
 ## Next Action
-Do not modify training or run V0. First fetch/verify the official V*Bench annotation for VStarBench position 0 (`sa_4690`) and confirm its target object and bounding box against the local sample. Then construct matched positive/negative evidence views and proceed to fixed-prefix latent replay.
+Run only the Step 13 natural three-view evidence pilot. Do not start V0 and do not implement forced replay unless Step 13 shows that the positive/negative views fail the strict natural-alignment gate.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
