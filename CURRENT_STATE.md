@@ -32,98 +32,91 @@ Establish a reproducible Monet baseline and determine whether naturally emitted 
 - Deterministic forced engineering diagnostic passed.
 - Natural VStarBench raw-token capture passed without forced tokens.
 
-## VStarBench Evaluation Path
-Pinned VLMEvalKit uses `Qwen2VLChat`. VStarBench follows the standard `ImageMCQDataset` prompt plus Monet's official system prompt. The vLLM path is greedy (`temperature=0.0`) with `max_new_tokens=2048`. V_COT captures raw token IDs observationally without altering the baseline generation semantics.
-
 ## Natural Latent Trigger Characterization — COMPLETE
 Recorded as `EXP-0001` through `EXP-0003`.
 
-Full 191-sample result:
+Full VStarBench (`n=191`):
 ```text
-samples: 191
-triggered_samples: 72
-trigger_rate: 72/191 = 0.3769633508 (~37.7%)
+triggered_samples: 72/191 = 0.3769633508 (~37.7%)
 balanced_marker_samples: 191/191
 multi_segment_samples: 0/191
-total_latent_segments: 72
-all observed latent segment lengths: 10
-mean_generated_tokens overall: 58.5916
-heuristic_option_correct: 116/191 = 0.60733 (diagnostic only)
+all 72 latent segments have length 10
+overall diagnostic option accuracy: 116/191 = 0.60733
 ```
 
-Triggered (`n=72`):
-```text
-heuristic_correct: 34/72 = 0.472222
-mean_generated_tokens: 79.778
-```
+Triggered (`n=72`): diagnostic correct `34/72 = 0.472222`, mean tokens `79.778`.
+Non-triggered (`n=119`): diagnostic correct `82/119 = 0.689076`, mean tokens `45.773`.
 
-Non-triggered (`n=119`):
-```text
-heuristic_correct: 82/119 = 0.689076
-mean_generated_tokens: 45.773
-```
-
-Exploratory associations:
+Observational association tests:
 ```text
 Fisher exact trigger vs diagnostic correctness: p = 0.0036791367
 Mann–Whitney generated-token count: p = 1.968701622239151e-24
 ```
 
-Category trigger rates are similar (`direct_attributes` 38.3%, `relative_position` 36.8%), and the same triggered-vs-nontriggered directional accuracy gap appears in both categories. This is observational only; trigger status is endogenous and may mark difficult or uncertain examples.
+Category trigger rates are similar (`direct_attributes` 38.3%, `relative_position` 36.8%). Trigger status is endogenous, so these observational differences do not establish latent utility or harm.
 
-## Paired Latent-Suppression Ablation — COMPLETE
+## Paired Latent-Suppression Ablation — INTERVENTION VERIFIED, UTILITY JUDGMENT NOT YET FINAL
 Recorded as `EXP-0004`.
 
 ### Intervention implementation
-The first attempted `bad_words=["<abs_vis_token>"]` implementation failed before generation because vLLM 0.10.0 `SamplingParams.update_from_tokenizer()` accesses `tokenizer.max_token_id`, which is absent from the installed `Qwen2TokenizerFast`. No model outputs were produced by that failed attempt.
+The validated implementation uses vLLM `allowed_token_ids` to allow the full model vocabulary except exactly token ID `151666=<abs_vis_token>`. Model vocabulary size is `151670`, leaving `151669` allowed IDs including latent-end ID `151667`.
 
-The validated implementation uses vLLM `allowed_token_ids` to allow the entire model vocabulary except exactly token ID `151666` (`<abs_vis_token>`). Model vocabulary size is `151670`, so `151669` IDs remain allowed, including latent-end ID `151667`.
+The original `bad_words` implementation failed before generation because vLLM 0.10.0 calls `tokenizer.max_token_id`, which is absent from the installed `Qwen2TokenizerFast`. The environment was not modified.
 
-A 5-sample smoke test passed with:
+Full intervention on all 72 naturally-triggered baseline samples:
 ```text
-exact_exclusion_verified_samples: 5/5
-block_verified_samples: 5/5
-VSTAR_LATENT_OFF_ABLATION_PASS=True
-```
-
-### Full paired intervention on all 72 naturally-triggered baseline samples
-```text
-n_intervened: 72
-exact_exclusion_verified_samples: 72
-block_verified_samples: 72
+exact_exclusion_verified_samples: 72/72
+block_verified_samples: 72/72
 baseline diagnostic correct: 34/72 = 0.472222
 latent-off diagnostic correct: 24/72 = 0.333333
-accuracy delta (latent-off - baseline): -0.138889
-```
-
-Paired transitions:
-```text
+raw diagnostic delta: -0.138889
 correct -> correct: 18
 correct -> wrong:   16
 wrong   -> correct: 6
 wrong   -> wrong:   32
-```
-
-Exact two-sided McNemar test:
-```text
-p = 0.052478790283203125
-```
-
-Output length:
-```text
+McNemar exact two-sided p = 0.052478790283203125
 baseline mean tokens: 79.7778
 latent-off mean tokens: 80.3333
 ```
 
-### Interpretation
-Blocking the latent-start token reduces the diagnostic option accuracy by 13.9 percentage points on the exact set of samples that naturally triggered latent mode at baseline. Suppression causes more `correct->wrong` flips (16) than `wrong->correct` flips (6). The paired McNemar result is suggestive but narrowly above the conventional 0.05 threshold, so this should be described as evidence of a beneficial trend, not a conventionally significant proof.
+### Category-level paired analysis
+`direct_attributes` (`n=44`):
+```text
+baseline diagnostic accuracy: 25/44 = 0.568182
+latent-off diagnostic accuracy: 16/44 = 0.363636
+delta: -0.204545
+correct->wrong: 13
+wrong->correct: 4
+McNemar exact p = 0.049041748046875
+mean tokens: 78.500 -> 76.909
+```
 
-This paired intervention is substantially stronger than the earlier triggered-vs-nontriggered observational comparison: for the same naturally-triggered examples, removing access to latent mode often harms the answer. Therefore the earlier lower accuracy of naturally-triggered examples is better interpreted as difficulty/uncertainty selection rather than evidence that latent reasoning is generally harmful.
+`relative_position` (`n=28`):
+```text
+baseline diagnostic accuracy: 9/28 = 0.321429
+latent-off diagnostic accuracy: 8/28 = 0.285714
+delta: -0.035714
+correct->wrong: 3
+wrong->correct: 2
+McNemar exact p = 1.0
+mean tokens: 81.786 -> 85.714
+```
 
-However, this intervention only establishes utility of access to the latent pathway under this decoding policy. It does **not** establish that every latent hidden state is visually grounded, nor that all emitted latent states are useful supervision targets. The next scientific question remains whether positive/evidence-preserving views produce latent states that are more aligned/useful than evidence-destroying views.
+### Critical parser confound discovered
+The category audit exposed that most discordant correctness flips are not clean option-to-option changes under the current diagnostic parser:
+- of 16 `correct->wrong` flips, 13 have `latent_off_predicted_option_diagnostic=None`;
+- of 6 `wrong->correct` flips, 5 have `baseline_predicted_option_diagnostic=None`;
+- therefore 18/22 (81.8%) discordant pairs involve a parser failure (`None`) on one side.
+
+Only four discordant pairs are explicit option-to-option changes under the current parser:
+- `correct->wrong`: 3 (`14: B->A`, `29: B->A`, `112: D->A`);
+- `wrong->correct`: 1 (`100: A->C`).
+For these four resolved discordant pairs alone, exact McNemar is not significant (`p=0.625`).
+
+Therefore the previously observed 13.9-point raw diagnostic drop and the direct-attributes `p=0.049` **cannot yet be treated as reliable evidence that latent access improves answer correctness**. They may partly or largely reflect answer-format / parser failures. The intervention itself is valid, but the utility conclusion is pending robust re-judging of the stored raw outputs.
 
 ## Formal Baseline Reproduction Caveat
-Monet's README states that exact-matching evaluation was replaced by an API judge and asks users to apply an API model as a supplementary judge, but the README does not specify the judge model in the evaluation section. Therefore exact reproduction of the reported VStarBench score is currently under-specified unless the judge model/configuration can be recovered from code, paper, or authors. The current boxed-option extraction remains diagnostic only and must not be compared directly with the paper's reported score.
+Monet's README says exact matching was replaced by an API judge and instructs users to apply an API model as a supplementary judge, but the evaluation section does not identify the exact judge model/configuration. Current boxed-option extraction is diagnostic only and must not be compared directly with the reported Monet VStarBench score.
 
 ## Next Milestones
 - [x] Pin Monet implementation and checkpoint.
@@ -131,14 +124,15 @@ Monet's README states that exact-matching evaluation was replaced by an API judg
 - [x] Verify latent token IDs and runner patch.
 - [x] Bring up pinned VLMEvalKit.
 - [x] Verify VStarBench dataset/prompt path.
-- [x] Capture natural raw latent markers.
-- [x] Characterize all 191 VStarBench examples.
-- [x] Analyze trigger status vs correctness/category/response length.
+- [x] Characterize natural latent triggering over all 191 examples.
 - [x] Implement and validate exact latent-start suppression.
-- [x] Run paired latent-off ablation on all 72 naturally-triggered examples.
-- [ ] Recover or document the supplementary-judge protocol sufficiently for formal baseline-score reproduction.
+- [x] Run paired latent-off intervention over all 72 naturally-triggered examples.
+- [x] Analyze paired intervention by category and transition type.
+- [x] Identify diagnostic-parser confounding in the paired correctness analysis.
+- [ ] Re-judge stored baseline/latent-off raw outputs with a more robust deterministic MCQ resolver and audit all previously `None` cases.
+- [ ] Recover or document the supplementary API judge protocol sufficiently for formal baseline-score reproduction.
 - [ ] Freeze the reproduced baseline with a Git tag once scoring is documented.
-- [ ] Locate/instrument the exact latent-state tensors.
+- [ ] Locate/instrument exact latent-state tensors.
 - [ ] Run no-training positive/evidence-preserving vs negative/evidence-destroying visual-view latent separability test.
 - [ ] Start V0 only if the separability/utility gate is supported.
 
@@ -147,10 +141,10 @@ Monet's README states that exact-matching evaluation was replaced by an API judg
 - VLMEvalKit was transferred as an archive and has no local `.git` metadata.
 - Windows-to-Linux transfers can introduce CRLF.
 - vLLM shutdown may emit non-fatal NCCL/resource-tracker warnings.
-- Monet evaluation README requires an API judge but does not name the exact judge model in the evaluation section.
+- Monet evaluation README requires an API judge but does not identify the exact judge model in the evaluation section.
 
 ## Next Action
-First analyze the paired latent-off JSONL by benchmark category and by transition type without rerunning the model. In parallel, inspect Monet/VLMEvalKit/paper sources for the exact supplementary-judge model and scoring configuration. After the paired analysis and baseline-scoring protocol are documented, move to exact latent-tensor instrumentation and the no-training positive/negative visual-evidence separability test. Do not start V0 training yet.
+Do not rerun the model yet. First inspect and re-judge the stored raw texts for the 22 discordant paired cases, especially the 18 cases involving `None`, using the VStarBench option strings and conservative final-answer parsing. Recompute the paired transition table only after this audit. Then move to exact latent-tensor instrumentation and the positive/negative visual-evidence separability test. Do not start V0 training yet.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
