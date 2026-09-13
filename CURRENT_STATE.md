@@ -95,6 +95,16 @@ This does not imply that Monet's latent states are useless. It means token-level
 ## Formal Baseline Reproduction Caveat
 Monet's README says exact matching was replaced by an API judge and instructs users to apply an API model as a supplementary judge, but the evaluation section does not identify the exact judge model/configuration. Current local option-aware rescoring is deterministic and substantially more reliable than the original parser, but it is still not the official supplementary API judge and should not be compared directly with the paper's reported VStarBench score.
 
+## Step 12 — Exact Latent Tensor Capture Probe IMPLEMENTED, NOT YET VERIFIED
+Implemented files:
+- `scripts/12_make_tensor_capture_runner.py`
+- `scripts/12_vstar_single_latent_tensor_probe.py`
+- `scripts/12_vstar_single_latent_tensor_probe.sh`
+
+The probe copies the pinned official Monet runner into a temporary directory and inserts observation-only dumping exactly where Monet assigns `st["pending"] = last_token_h[i].detach()`. These are the recurrent hidden-state vectors subsequently consumed through `self.inputs_embeds.index_copy_` on the next latent decode step. The instrumentation writes only on distributed rank 0, saves float32 CPU copies, and leaves the live GPU tensor unchanged.
+
+The probe uses known naturally-triggered VStarBench position 0 and requires the generated token IDs to match the previously recorded baseline token IDs exactly. It passes only if generation is unchanged and exactly 10 finite latent vectors with one common hidden size are captured.
+
 ## Next Milestones
 - [x] Pin Monet implementation and checkpoint.
 - [x] Reproduce runtime and official inference path.
@@ -106,8 +116,7 @@ Monet's README says exact matching was replaced by an API judge and instructs us
 - [x] Audit and repair answer parsing with option-aware rescoring.
 - [x] Establish that paired correctness is neutral under the local robust scorer.
 - [ ] Recover/document the supplementary API judge protocol if possible.
-- [ ] Locate/instrument the exact latent-state tensors consumed by Monet's recurrent latent path.
-- [ ] Run a single-sample tensor-capture engineering validation.
+- [ ] Verify Step 12 exact latent-state tensor capture on one sample.
 - [ ] Run no-training positive/evidence-preserving vs negative/evidence-destroying visual-view latent separability test.
 - [ ] Start V0 only if the separability/utility gate is supported.
 
@@ -119,7 +128,7 @@ Monet's README says exact matching was replaced by an API judge and instructs us
 - Monet evaluation README requires an API judge but does not identify the exact judge model in the evaluation section.
 
 ## Next Action
-Stop extending token-level trigger/suppression statistics. Instrument the exact hidden-state vectors that Monet stores as `st["pending"]` and then consumes through `self.inputs_embeds.index_copy_` during latent mode. First validate tensor capture on one known naturally-triggered VStarBench sample without changing generation. Only after that engineering gate passes should positive/evidence-preserving and negative/evidence-destroying image interventions be introduced.
+Run only the Step 12 single-sample tensor-capture engineering probe. Do not introduce positive/negative image interventions yet. If the probe preserves the baseline token sequence exactly and captures 10 finite hidden-state vectors, record that result and then design the `z(I)`, `z(I^+)`, `z(I^-)` separability experiment.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
