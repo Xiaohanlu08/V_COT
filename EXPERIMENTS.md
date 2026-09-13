@@ -41,9 +41,9 @@ Established `PROJECT_GOAL.md`, `CURRENT_STATE.md`, `DECISIONS.md`, and `EXPERIME
 
 **Settings:** `LATENT_SIZE=10`, greedy decoding, no forced tokens.
 
-**Result:** triggered `8/20=0.40`; all markers balanced; no multi-segment behavior; all latent segments length 10. Triggered examples were longer and less often correct under the diagnostic parser than non-triggered examples.
+**Result:** triggered `8/20=0.40`; all markers balanced; no multi-segment behavior; all latent segments length 10. Triggered examples were longer and less often correct under the original diagnostic parser than non-triggered examples.
 
-**Conclusion:** KEEP. Instrumentation clean; full-dataset characterization justified.
+**Conclusion:** KEEP for trigger characterization only. Later parser auditing showed the original correctness parser is unreliable for semantic answer text.
 
 ---
 
@@ -63,28 +63,23 @@ Established `PROJECT_GOAL.md`, `CURRENT_STATE.md`, `DECISIONS.md`, and `EXPERIME
 - balanced markers: 191/191
 - multi-segment: 0/191
 - all 72 latent segments length 10
-- overall diagnostic option accuracy: `116/191 = 0.60733`
 
-**Triggered vs non-triggered:** triggered `34/72=0.472222`, mean tokens `79.778`; non-triggered `82/119=0.689076`, mean tokens `45.773`.
+The original simple parser reported `116/191 = 0.60733` diagnostic accuracy, but this number is not suitable for scientific conclusions after the later parser audit.
 
-**Exploratory tests:** Fisher exact trigger vs diagnostic correctness `p=0.0036791367`; Mann–Whitney token-count difference `p=1.968701622239151e-24`.
-
-**Interpretation:** natural latent trigger correlates with difficult/uncertain trajectories, but the comparison is observational and not causal.
-
-**Conclusion:** KEEP.
+**Conclusion:** KEEP for natural-trigger mechanics and frequency.
 
 ---
 
 ## EXP-0004 — Paired latent-start suppression on naturally-triggered VStarBench examples
-**Status:** COMPLETED FOR INTERVENTION; CORRECTNESS UTILITY INTERPRETATION INCONCLUSIVE PENDING RE-JUDGING
+**Status:** COMPLETED; INTERVENTION VALID, NO DETECTABLE CORRECTNESS EFFECT AFTER ROBUST LOCAL RESCORING
 
 **Date:** 2026-09-13
 
 **Branch:** `main`
 
-**Scripts:** `scripts/10_vstar_latent_off_ablation.py`, `scripts/10_vstar_latent_off_ablation.sh`
+**Scripts:** `scripts/10_vstar_latent_off_ablation.py`, `scripts/10_vstar_latent_off_ablation.sh`, `scripts/11_rescore_paired_outputs.py`, `scripts/11_rescore_paired_outputs.sh`
 
-**Script correction commit:** `3f7d42d0a556b22369de4992a8ecc13de6fa1c4f`
+**Latent-off script correction commit:** `3f7d42d0a556b22369de4992a8ecc13de6fa1c4f`
 
 **Base checkpoint:** local `models/Monet-7B`
 
@@ -92,7 +87,7 @@ Established `PROJECT_GOAL.md`, `CURRENT_STATE.md`, `DECISIONS.md`, and `EXPERIME
 
 **VLMEvalKit snapshot:** `open-compass/VLMEvalKit@1e2b2f9934cd5ea05e54b8706ab40b09ec3d3ae3`
 
-**Purpose:** Test the causal effect of allowing Monet to enter latent mode on the exact examples that naturally triggered it at baseline.
+**Purpose:** Test the causal effect of allowing Monet to enter latent mode on the exact 72 VStarBench examples that naturally triggered it at baseline.
 
 **Intervention:** allow every model-vocabulary token ID except exactly `151666=<abs_vis_token>` using vLLM `allowed_token_ids`. Vocabulary size `151670`; allowed IDs `151669`, including latent-end ID `151667`.
 
@@ -105,60 +100,49 @@ block_verified_samples: 72/72
 VSTAR_LATENT_OFF_ABLATION_PASS=True
 ```
 
-**Raw diagnostic paired result:**
+**Raw original-parser result (superseded for correctness interpretation):**
 ```text
 baseline diagnostic correct: 34/72 = 0.472222
 latent-off diagnostic correct: 24/72 = 0.333333
-raw delta: -0.138889
 correct->correct: 18
 correct->wrong: 16
 wrong->correct: 6
 wrong->wrong: 32
 McNemar exact two-sided p = 0.052478790283203125
-mean tokens: 79.7778 -> 80.3333
 ```
 
-**Category audit:**
+**Why the raw result was invalid for utility interpretation:**
+Manual audit showed that 18/22 discordant pairs involved `None` on one side because the old parser only handled option-letter-style final answers reliably. Monet often emitted semantically equivalent answers such as `\boxed{purple}`, `\boxed{silver}`, or `\boxed{left}`. A non-`None` parsing error was also found at position 61: the old parser returned `A` although the raw latent-off output explicitly ended with `FINAL ANSWER: C. golden`.
 
-`direct_attributes` (`n=44`): baseline diagnostic `25/44=0.568182`, latent-off `16/44=0.363636`, raw delta `-0.204545`, transitions `CC=12, CW=13, WC=4, WW=15`, McNemar `p=0.049041748046875`.
+**Option-aware rescoring:**
+All 72 baseline/latent-off raw outputs were rescored deterministically using the actual VStarBench option strings. Priority was given to boxed option letters, boxed semantic option text, explicit final-answer markers, and conservative tail-sentence semantic matching. This scorer is local and deterministic; it is not Monet's under-specified supplementary API judge.
 
-`relative_position` (`n=28`): baseline diagnostic `9/28=0.321429`, latent-off `8/28=0.285714`, raw delta `-0.035714`, transitions `CC=6, CW=3, WC=2, WW=17`, McNemar `p=1.0`.
-
-**Critical parser confound:** 18/22 discordant pairs involve `None` on one side under the old diagnostic parser. The old parser is not suitable for final utility claims.
-
-**Conclusion:** KEEP the intervention; utility conclusion INCONCLUSIVE pending robust re-judging.
-
----
-
-## EXP-0005 — Manual audit of discordant paired outputs with parser `None`
-**Status:** COMPLETED
-
-**Date:** 2026-09-13
-
-**Purpose:** Determine whether the 18 discordant baseline-vs-latent-off pairs containing a parser `None` represent genuine answer changes or answer-format/parser artifacts.
-
-**Data:** stored raw outputs from `results/causal_ablation/vstar_latent_off_all_triggered.jsonl`; no model rerun.
-
-**Audit result:**
-- 16/18 apparent flips are parser/format artifacts. Baseline and latent-off give the same semantically correct answer, but one response uses answer text rather than an option letter, e.g. `\boxed{purple}`, `\boxed{silver}`, `\boxed{orange}`, `\boxed{left}`, `\boxed{right}`, or an unboxed semantic answer.
-- Position 61 is a genuine `correct->wrong`: GT `A`; baseline says `white` (option A), while latent-off explicitly ends `FINAL ANSWER: C. golden`.
-- Position 92 is a genuine `wrong->correct`: GT `D`; baseline says `brown` (option B), while latent-off gives black / option D.
-
-**Additional parser failure discovered:** At position 61, the old parser returned latent-off prediction `A` even though the raw output explicitly says `FINAL ANSWER: C. golden`. The cause is the old regex scanning unrestricted prose for standalone letters A-D and matching an earlier article `a`. Therefore the old parser may be wrong even when it returns a non-`None` option.
-
-**Provisional corrected paired table:** If only these 18 audited pairs are fixed while the remaining old labels are left untouched:
+**Rescored result:**
 ```text
-correct -> correct: 34
-correct -> wrong:   4
-wrong   -> correct: 2
-wrong   -> wrong:   32
-McNemar exact two-sided p = 0.6875
+n: 72
+changed_parse_samples: 49
+baseline correct:   54/72 = 0.750000
+latent-off correct: 54/72 = 0.750000
+delta (latent-off - baseline): 0.000000
+
+correct -> correct: 50
+correct -> wrong:    4
+wrong   -> correct:  4
+wrong   -> wrong:   14
+
+McNemar exact two-sided p = 1.0
+unresolved baseline outputs: 0
+unresolved latent-off outputs: 2 (positions 0, 34)
+VSTAR_OPTION_AWARE_RESCORE_PASS=True
 ```
-This table is explicitly provisional and must not be used as the final utility result because non-`None` old-parser outputs can also be wrong.
 
-**Conclusion:** The earlier apparent latent-utility signal is not reliable under the old parser. Full option-aware re-scoring of all 72 stored paired outputs is required before any correctness claim.
+**Interpretation:** After correcting answer-format parsing, there is no detectable paired correctness effect of blocking latent entry on these 72 examples. The earlier apparent 13.9-point benefit of latent access was a parser artifact. The two remaining unresolved latent-off cases cannot overturn the null directional conclusion at this sample size.
 
-**Next action:** Run `scripts/11_rescore_paired_outputs.py` / `.sh`, which performs deterministic option-aware local re-scoring against the actual VStarBench option strings and leaves ambiguous cases unresolved for audit. No model rerun is required.
+**Scientific consequence:** KEEP the intervention result as a negative/null answer-level causal finding. Do not use trigger status or latent-path access alone as evidence that a latent state is useful. The next scientifically relevant gate is direct hidden-state analysis under visual-evidence-preserving and visual-evidence-destroying interventions.
+
+**Conclusion:** KEEP. Token-level utility line is closed for now; answer-level paired effect is neutral under the robust local scorer.
+
+**Next action:** Instrument the exact latent hidden-state vectors stored in `st["pending"]` and consumed through `self.inputs_embeds.index_copy_`; first verify capture on one naturally-triggered sample without changing generation, then proceed to `z(I)`, `z(I^+)`, `z(I^-)` separability tests.
 
 ---
 
