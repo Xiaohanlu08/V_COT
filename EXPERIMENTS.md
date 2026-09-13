@@ -232,8 +232,6 @@ Step-wise `Delta_evidence` was positive only on step 1 and negative on 9/10 step
 
 **Conclusion:** KEEP as a negative single-sample result and as validation of the fixed-prefix/fixed-trigger instrumentation. Do not start V0 from this evidence.
 
-**Next action:** replace the crop-based positive/negative design with a full-image target-specificity test: neutral-mask the annotated glove box in the original-size image and compare its latent perturbation against 32 same-size sham masks elsewhere in the same image under the same fixed-prefix/fixed-trigger protocol.
-
 ---
 
 ## EXP-0008 — Full-image target occlusion specificity on VStarBench position 0
@@ -279,7 +277,46 @@ The empirical one-sided p-value is `(1 + 1)/(32 + 1) = 0.0606`, so the result is
 
 **Conclusion:** KEEP as a promising single-sample result. It justifies multi-sample replication, but it does not yet justify claiming visual grounding or starting V0.
 
-**Next action:** audit reproducible mapping from the 72 naturally-triggered VLMEvalKit positions to official V*Bench annotations, freeze a multi-sample replication subset before looking at additional target-specificity outcomes, and then apply the same full-image target-vs-sham operator under fixed-prefix/fixed-trigger replay.
+---
+
+## EXP-0009 — Triggered-72 official V*Bench annotation mapping audit
+**Status:** COMPLETED
+
+**Scripts:** `scripts/16_vstar_annotation_mapping_audit.py`, `scripts/16_vstar_annotation_mapping_audit.sh`
+
+**Purpose:** Establish a reproducible mapping from the 72 naturally-triggered VLMEvalKit VStarBench positions to official `craigwu/vstar_bench` annotations before selecting any multi-sample target-occlusion replication cohort.
+
+**Mapping rule:** category + normalized exact question; repeated question/category matches are disambiguated by option-string compatibility. No target-occlusion outcomes are used.
+
+**Results:**
+```text
+triggered_total: 72
+official_annotation_file_count: 191
+mapped_count: 69
+unresolved_count: 3
+unique_question_category: 62
+question_category_plus_options: 7
+mapped direct_attributes: 41
+mapped relative_position: 28
+single_target_single_bbox_count: 49
+single_target_single_bbox direct_attributes: 41
+single_target_single_bbox relative_position: 8
+unresolved_positions: [29, 49, 61]
+VSTAR_TRIGGERED72_ANNOTATION_AUDIT_PASS=True
+```
+
+The unresolved cases are repeated direct-attribute questions:
+```text
+29: What is the color of the man's cap?       candidates=4
+49: What is the color of the plastic stool?   candidates=2
+61: What is the color of the dog?             candidates=3
+```
+
+**Interpretation:** There is a sufficiently large clean pool for outcome-blind replication. All 41 mapped direct-attribute samples have exactly one target object and one bbox, while only 8 relative-position samples satisfy that criterion. Because relative-position questions require relational evidence and often multiple objects/context, mixing them into the same target-only occlusion cohort would blur the intervention semantics.
+
+**Conclusion:** KEEP. The confirmatory replication cohort will therefore be selected only from mapped, naturally-triggered, single-target/single-bbox `direct_attributes` samples; development position 0 will be excluded. The unresolved positions are excluded rather than manually resolved after observing specificity outcomes.
+
+**Next action:** freeze a 12-sample direct-attribute replication cohort with a fixed seed and persist its SHA-256 before running any additional GPU target-occlusion inference.
 
 ---
 
