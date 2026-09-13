@@ -103,33 +103,38 @@ Step 25b corrected only the audit specification and passed on the pinned Monet S
 - student latent forward generates `ce_patch_pos` and `ce_patch_vec` from the student-image branch;
 - `ce_patch_vec[b]` is returned as `Tensor(num_latents_b, H)` and is injected into the corresponding latent-token positions in the second forward;
 - `student_alignment_poss` are the latent-pad positions in the Stage-3 student sequence;
-- the second forward computes all-layer hidden states at those positions and compares them with cached teacher hidden states using mean cosine distance;
+- the second forward gathers all-layer student hidden states at those positions and passes them with cached teacher hidden states to `alignment_loss(...)`;
+- for the all-layer 3-D case `[num_layers, num_align, hidden_dim]`, the pinned `alignment_loss` calls `torch.nn.functional.cosine_similarity(...)` without an explicit `dim`, so PyTorch's default `dim=1` is the alignment-position axis, followed by `.mean()`;
 - official Stage-3 objective remains `student_ce_loss + alignment_weight * alignment_loss`;
 - no official negative-image branch exists.
 
-Important correction: `affine_subspace_alignment_loss` exists in the model source, but source search finds no official Stage-3 call site. The active Stage-3 alignment path calls `alignment_loss(...)`, i.e. all-layer cosine alignment at the latent positions. Do not treat affine-subspace alignment as the official Stage-3 training objective.
+Important correction: `affine_subspace_alignment_loss` exists in the model source, but source search finds no official Stage-3 call site. The active Stage-3 alignment path calls `alignment_loss(...)`. Do not treat affine-subspace alignment as the official Stage-3 training objective.
 
 ## Candidate V0 Loss — NARROWED, NOT YET FROZEN
-The evidence term should be defined in the same representation space as the official Stage-3 teacher alignment rather than directly assuming cosine similarity on raw `ce_patch_vec`.
+The evidence term should use the same teacher/student all-layer tensors as the official Stage-3 alignment path rather than directly assuming cosine similarity on raw `ce_patch_vec`.
 
-The most faithful candidate is an alignment-ranking term:
+However, because the official all-layer alignment uses default cosine `dim=1` across alignment positions rather than the hidden dimension, do not automatically reuse its scalar as the V0 ranking metric. Step 26 must expose the runtime tensors so we can compare:
+1. exact official alignment behavior; and
+2. an explicit per-latent/per-layer cosine along `dim=-1` as a candidate evidence metric,
+without changing the official baseline loss.
+
+The original objective remains:
 ```text
-D_pos = official all-layer teacher-alignment distance for original-image branch
-D_neg = corresponding teacher-alignment distance for evidence-occluded branch
-L_evidence = ranking/gating function of D_pos versus D_neg
+L_base = L_CE + lambda_align * L_align_official
 ```
-with the original objective preserved:
+and the V0 extension is still only conceptual:
 ```text
-L_V0 = L_CE + lambda_align * D_pos + lambda_evidence * L_evidence
+L_V0 = L_base + lambda_evidence * L_evidence
 ```
-The exact ranking form, stop-gradient choice, margin/temperature, reduction, and weight are not frozen.
+The exact evidence metric, ranking form, stop-gradient choice, margin/temperature, reduction, and weight are not frozen.
 
 ## Runtime Probe Requirements
 Before freezing `L_evidence`, verify at runtime on the smallest feasible local path:
 - exact type/nesting/shape of `student_outputs_latent.ce_patch_vec`;
-- exact type/nesting/shape of cached/teacher-style all-layer targets;
+- exact type/nesting/shape of teacher-shaped all-layer targets;
 - exact relation among latent count, `student_alignment_poss`, and teacher alignment positions;
-- scalar/reduction behavior of the active all-layer cosine alignment;
+- scalar/reduction behavior of the active official alignment;
+- explicit `dim=-1` per-hidden-vector cosine on the same runtime tensors for comparison only;
 - peak GPU memory and runtime for adding an occluded negative latent branch;
 - whether a no-grad negative branch is enough for the first V0 pilot or a fully differentiable negative branch is feasible on 24 GB GPUs.
 
@@ -140,6 +145,7 @@ Before freezing `L_evidence`, verify at runtime on the smallest feasible local p
 - VStar confirmatory samples remain probing/evaluation only, never training data.
 - Do not change the frozen Step-24 negative operator after outcome inspection.
 - Do not mistake the unused affine-subspace helper for the official Stage-3 alignment path.
+- Preserve the official Stage-3 baseline alignment exactly in matched controls even if V0 defines an additional metric with explicit `dim=-1`.
 - Do not download/rebuild Stage1/2 assets before proving they are required for the runtime probe.
 - Any continued-SFT V0 experiment must have a matched continued-SFT control with identical data/steps except the new evidence loss.
 
@@ -158,4 +164,4 @@ Before freezing `L_evidence`, verify at runtime on the smallest feasible local p
 - [ ] Run matched continued-SFT baseline vs V0 pilot.
 
 ## Next Action
-Use the existing local `models/Monet-7B` and already extracted Visual_CoT sample assets for the smallest runtime probe possible. Do not download the 16.6 GB Stage-2/Stage-3 checkpoint merely to inspect tensor shapes; only escalate to those assets if the local architecture-identical probe cannot establish the required runtime contract.
+Run Step 26 using the existing local `models/Monet-7B` and already extracted Visual_CoT row-0 assets. Treat all synthetic-teacher scores as mechanics-only; do not use them to select a margin or make a scientific claim.
