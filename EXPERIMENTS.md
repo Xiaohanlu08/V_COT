@@ -236,6 +236,53 @@ Step-wise `Delta_evidence` was positive only on step 1 and negative on 9/10 step
 
 ---
 
+## EXP-0008 — Full-image target occlusion specificity on VStarBench position 0
+**Status:** COMPLETED; PROMISING SINGLE-SAMPLE TARGET-SPECIFIC SIGNAL
+
+**Scripts:** `scripts/15_vstar_target_occlusion_specificity.py`, `scripts/15_vstar_target_occlusion_specificity.sh`
+
+**Purpose:** Remove the crop/resize confound identified in EXP-0007 and test whether occluding the benchmark-annotated target region perturbs Monet's aligned recurrent latent trajectory more than matched nuisance occlusions elsewhere in the same image.
+
+**Design:**
+- all conditions preserve the full `2000 x 1500` image geometry;
+- target intervention neutral-masks the official glove bbox `[564,142,155,157]`;
+- 32 deterministic same-size sham masks are placed elsewhere in the image while excluding the target and nearby target context;
+- target and sham masks use the same surrounding-ring mean-RGB fill operator;
+- all runs use the validated fixed 25-token prefix and one-time forced latent start from EXP-0007;
+- original-image replay must pass the EXP-0005 reproduction gate before interpretation.
+
+**Primary statistic:**
+```text
+cosine_distance(mask) = 1 - mean_t cosine(z_t(original), z_t(masked))
+specificity = target_distance - median(sham_distances)
+```
+
+**Results:**
+```text
+original_replay_valid: true
+target_mean_cosine: 0.9989594221115112
+target_cosine_distance: 0.0010405778884887695
+target_mean_relative_l2: 0.043955929577350616
+control_cosine_distance_median: 0.00048357248306274414
+control_cosine_distance_mean: 0.0005317628383636475
+specificity_score: 0.0005570054054260254
+target_distance / median-control distance: ~2.1519x
+target_distance_percentile_among_controls: 96.875
+num_controls_with_distance_ge_target: 1/32
+empirical_one_sided_p: 0.06060606060606061
+VSTAR_TARGET_OCCLUSION_SPECIFICITY_PASS=True
+```
+
+**Interpretation:** On this single annotated sample, masking the task-relevant glove region perturbs the aligned latent trajectory about `2.15x` more than the median matched sham mask. Only one of 32 sham masks has an equal-or-larger cosine-distance perturbation, placing the target at the `96.875`th percentile of the within-image control distribution. This is directionally consistent with target-specific visual sensitivity.
+
+The empirical one-sided p-value is `(1 + 1)/(32 + 1) = 0.0606`, so the result is not conventionally significant at `0.05`. More importantly, this is only one sample. Increasing the sham count on position 0 alone would refine the within-image null but would not establish generalization across questions/images.
+
+**Conclusion:** KEEP as a promising single-sample result. It justifies multi-sample replication, but it does not yet justify claiming visual grounding or starting V0.
+
+**Next action:** audit reproducible mapping from the 72 naturally-triggered VLMEvalKit positions to official V*Bench annotations, freeze a multi-sample replication subset before looking at additional target-specificity outcomes, and then apply the same full-image target-vs-sham operator under fixed-prefix/fixed-trigger replay.
+
+---
+
 ## Experiment Template
 ```markdown
 ## EXP-XXXX — Short title
