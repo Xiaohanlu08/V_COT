@@ -173,16 +173,66 @@ same_pre_latent_prefix_original_vs_positive: false
 same_pre_latent_prefix_original_vs_negative: false
 same_latent_start_position: false
 aligned_natural_comparison_ready: false
-VSTAR_EVIDENCE_PILOT_CAPTURE_PASS=True
 ```
 
-**Observed answers:** original `A. rubber`; positive `A`; negative `D` (leather under the VLMEvalKit option ordering used for the run). These answer changes are descriptive only and are not the target metric of this experiment.
+**Interpretation:** the visual intervention changes the model's latent-entry policy, but the textual pre-latent trajectories and trigger timing differ, so direct latent similarity from the natural run is not interpretable.
 
-**Interpretation:** the visual intervention changes the model's latent-entry policy: the positive zoom suppresses natural latent entry, while the negative masked view triggers earlier. Because the textual pre-latent trajectories and trigger timing differ, no direct latent similarity from this natural run is scientifically interpretable.
+**Conclusion:** KEEP as an alignment-failure result.
 
-**Conclusion:** KEEP as an alignment-failure result. Proceed to fixed-prefix / fixed-trigger counterfactual replay.
+---
 
-**Next action:** replay the exact 25 baseline generated tokens preceding latent start as explicit prompt token IDs, force only the first subsequent token to `151666`, capture `10 x 3584` recurrent states for `I`, `I+`, and `I-`, and first verify the original replay against EXP-0005 before interpreting evidence similarities.
+## EXP-0007 — Fixed-prefix / fixed-trigger crop-based evidence replay on VStarBench position 0
+**Status:** COMPLETED; MECHANICALLY VALID, INITIAL EVIDENCE-SEPARABILITY HYPOTHESIS NOT SUPPORTED
+
+**Scripts:** `scripts/14_make_fixed_trigger_runner.py`, `scripts/14_vstar_fixed_prefix_evidence_replay.py`, `scripts/14_vstar_fixed_prefix_evidence_replay.sh`
+
+**Purpose:** Remove textual-prefix and latent-entry timing confounds from EXP-0006 and test the original single-sample hypothesis `sim(z(I),z(I+)) > sim(z(I),z(I-))`.
+
+**Replay protocol:**
+- exact 25 baseline generated token IDs before the natural latent-start token are appended directly as `prompt_token_ids`;
+- the base prompt token IDs and chat-template text are identical across original, positive-crop, and negative-crop views;
+- a temporary runner patch overrides only the first sampled token with `151666=<abs_vis_token>`;
+- all subsequent sampling remains unchanged;
+- recurrent `st["pending"]` tensors are captured exactly as in EXP-0005.
+
+**Mechanical validation:**
+```text
+prefix_generated_token_count: 25
+prefix_decode_encode_roundtrip_exact: true
+base_prompt_ids_identical_across_views: true
+chat_template_text_identical_across_views: true
+original: first_token=151666, segment=(0,10), latent_shape=(10,3584)
+positive: first_token=151666, segment=(0,10), latent_shape=(10,3584)
+negative: first_token=151666, segment=(0,10), latent_shape=(10,3584)
+mechanical_alignment_pass: true
+```
+
+**Original replay reproduction gate against EXP-0005:**
+```text
+mean cosine: 0.9999061822891235
+min cosine: 0.9998059272766113
+max cosine: 0.9999465346336365
+mean relative L2: 0.013379891403019428
+valid_for_counterfactual_comparison: true
+```
+
+**Evidence similarity:**
+```text
+S_positive_mean: 0.9516485333442688
+S_negative_mean: 0.9566512107849121
+Delta_evidence = S_positive - S_negative: -0.005002707242965698
+relative L2 original-positive: 0.3006730079650879
+relative L2 original-negative: 0.2855320870876312
+mean cosine positive-negative: ~0.98892948
+```
+
+Step-wise `Delta_evidence` was positive only on step 1 and negative on 9/10 steps.
+
+**Interpretation:** The replay protocol is valid, but the initial crop-based evidence-separability hypothesis is not supported on this sample. The negative delta must not be reframed as evidence for visual grounding. Because `I+` and `I-` share the same crop/resize geometry and are highly similar to each other, while both differ much more from the full original image, the dominant perturbation appears to be crop/resize geometry rather than target evidence removal.
+
+**Conclusion:** KEEP as a negative single-sample result and as validation of the fixed-prefix/fixed-trigger instrumentation. Do not start V0 from this evidence.
+
+**Next action:** replace the crop-based positive/negative design with a full-image target-specificity test: neutral-mask the annotated glove box in the original-size image and compare its latent perturbation against 32 same-size sham masks elsewhere in the same image under the same fixed-prefix/fixed-trigger protocol.
 
 ---
 
