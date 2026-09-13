@@ -115,7 +115,7 @@ McNemar exact two-sided p = 0.052478790283203125
 Manual audit showed that 18/22 discordant pairs involved `None` on one side because the old parser only handled option-letter-style final answers reliably. Monet often emitted semantically equivalent answers such as `\boxed{purple}`, `\boxed{silver}`, or `\boxed{left}`. A non-`None` parsing error was also found at position 61: the old parser returned `A` although the raw latent-off output explicitly ended with `FINAL ANSWER: C. golden`.
 
 **Option-aware rescoring:**
-All 72 baseline/latent-off raw outputs were rescored deterministically using the actual VStarBench option strings. Priority was given to boxed option letters, boxed semantic option text, explicit final-answer markers, and conservative tail-sentence semantic matching. This scorer is local and deterministic; it is not Monet's under-specified supplementary API judge.
+All 72 baseline/latent-off raw outputs were rescored deterministically using the actual VStarBench option strings. This scorer is local and deterministic; it is not Monet's under-specified supplementary API judge.
 
 **Rescored result:**
 ```text
@@ -124,25 +124,77 @@ changed_parse_samples: 49
 baseline correct:   54/72 = 0.750000
 latent-off correct: 54/72 = 0.750000
 delta (latent-off - baseline): 0.000000
-
 correct -> correct: 50
 correct -> wrong:    4
 wrong   -> correct:  4
 wrong   -> wrong:   14
-
 McNemar exact two-sided p = 1.0
 unresolved baseline outputs: 0
 unresolved latent-off outputs: 2 (positions 0, 34)
 VSTAR_OPTION_AWARE_RESCORE_PASS=True
 ```
 
-**Interpretation:** After correcting answer-format parsing, there is no detectable paired correctness effect of blocking latent entry on these 72 examples. The earlier apparent 13.9-point benefit of latent access was a parser artifact. The two remaining unresolved latent-off cases cannot overturn the null directional conclusion at this sample size.
-
-**Scientific consequence:** KEEP the intervention result as a negative/null answer-level causal finding. Do not use trigger status or latent-path access alone as evidence that a latent state is useful. The next scientifically relevant gate is direct hidden-state analysis under visual-evidence-preserving and visual-evidence-destroying interventions.
+**Interpretation:** After correcting answer-format parsing, there is no detectable paired correctness effect of blocking latent entry on these 72 examples. The earlier apparent 13.9-point benefit of latent access was a parser artifact.
 
 **Conclusion:** KEEP. Token-level utility line is closed for now; answer-level paired effect is neutral under the robust local scorer.
 
-**Next action:** Instrument the exact latent hidden-state vectors stored in `st["pending"]` and consumed through `self.inputs_embeds.index_copy_`; first verify capture on one naturally-triggered sample without changing generation, then proceed to `z(I)`, `z(I^+)`, `z(I^-)` separability tests.
+---
+
+## EXP-0005 — Exact recurrent latent tensor capture on VStarBench position 0
+**Status:** COMPLETED
+
+**Date:** 2026-09-13
+
+**Branch:** `main`
+
+**Scripts:** `scripts/12_make_tensor_capture_runner.py`, `scripts/12_vstar_single_latent_tensor_probe.py`, `scripts/12_vstar_single_latent_tensor_probe.sh`
+
+**Base checkpoint:** local `models/Monet-7B`
+
+**Upstream Monet commit:** `08939998d3d643a73a316e349faa34f420429153`
+
+**VLMEvalKit snapshot:** `open-compass/VLMEvalKit@1e2b2f9934cd5ea05e54b8706ab40b09ec3d3ae3`
+
+**Purpose:** Capture the exact continuous recurrent hidden-state sequence used by Monet during a naturally triggered latent segment, while proving that the instrumentation does not alter generation.
+
+**Instrumentation point:** A temporary copy of the pinned official Monet vLLM runner is patched immediately after:
+```python
+st["pending"] = last_token_h[i].detach()
+```
+The saved vector is therefore the same recurrent hidden state that is subsequently written into `self.inputs_embeds` for the next latent decode step. The live GPU tensor remains unchanged; only rank-0 float32 CPU copies are saved.
+
+**Data:** VStarBench position 0, previously verified to naturally trigger one `LATENT_SIZE=10` segment.
+
+**Validation:** The complete generated token ID sequence under instrumentation was compared with the previously saved natural baseline token sequence.
+
+**Results:**
+```text
+generation_exact_match_baseline: true
+num_latent_tensors: 10
+hidden_size: 3584
+dtype_saved: torch.float32
+all_finite: true
+mean_l2_norm: 288.1265869140625
+min_l2_norm: 275.2210998535156
+max_l2_norm: 293.09039306640625
+adjacent_cosine_mean: 0.9219153655899895
+adjacent_cosine_min: 0.6129838228225708
+adjacent_cosine_max: 0.9985483288764954
+VSTAR_SINGLE_LATENT_TENSOR_PROBE_PASS=True
+```
+
+**Saved outputs:**
+```text
+results/latent_capture/vstar_pos0_latents.pt
+results/latent_capture/vstar_pos0_latents_summary.json
+logs/12_vstar_single_latent_tensor_probe.log
+```
+
+**Interpretation:** Exact recurrent latent-state capture is now mechanically verified. The `10 x 3584` tensor sequence is the hidden-state trajectory actually fed recurrently by Monet. High mean adjacent cosine indicates a generally smooth trajectory, while the minimum adjacent cosine around `0.613` indicates at least one comparatively large state transition. These descriptive metrics do not by themselves establish visual grounding.
+
+**Conclusion:** KEEP. This closes the tensor-access engineering gate.
+
+**Next action:** Use V*Bench's benchmark-provided target-object/bounding-box annotations to construct a matched evidence-preserving and evidence-destroying pilot for position 0. Then implement fixed-prefix/fixed-trigger replay so `I`, `I+`, and `I-` share the same textual context and latent entry position. First require replay of the original image to reproduce the EXP-0005 latent trajectory before comparing visual interventions.
 
 ---
 
