@@ -1,10 +1,10 @@
 # Current State
 
 ## Project Stage
-Baseline reproduction / natural latent-trigger characterization.
+Baseline reproduction / natural latent-trigger characterization / causal latent-utility probing.
 
 ## Current Objective
-Establish a reproducible Monet baseline before implementing any new latent-supervision method, then test whether naturally emitted latent states are useful rather than merely correlated with difficult examples.
+Establish a reproducible Monet baseline and determine whether naturally emitted latent states are useful rather than merely correlated with difficult examples, before implementing V0 latent supervision.
 
 ## Current Branch
 `main`
@@ -22,153 +22,123 @@ Establish a reproducible Monet baseline before implementing any new latent-super
 - `vllm==0.10.0`
 - `trl==0.15.2`
 - Monet-7B checkpoint locally verified
-- Pinned VLMEvalKit imports as `0.2rc1`
-- Protected Hugging Face stack remains unchanged after controlled dependency bring-up.
+- pinned VLMEvalKit imports as `0.2rc1`
+- protected Hugging Face stack remains unchanged after controlled dependency bring-up.
 
 ## Verified Monet Inference Path
-- Official Monet example passes.
-- latent start token `<abs_vis_token>` = `151666`.
-- latent end token `</abs_vis_token>` = `151667`.
-- official-style runner patch verified in parent and spawned workers.
-- deterministic forced engineering diagnostic passed.
+- official Monet example passes;
+- `<abs_vis_token>` = `151666`;
+- `</abs_vis_token>` = `151667`;
+- official-style runner patch verified in parent and spawned workers;
+- deterministic forced engineering diagnostic passed;
 - natural VStarBench raw-token capture passed without forced tokens.
 
 ## VStarBench Evaluation Path
-Pinned VLMEvalKit uses `Qwen2VLChat`. The relevant VStarBench path is the standard `ImageMCQDataset` prompt plus Monet's official system prompt. The vLLM generation path is greedy (`temperature=0.0`) with default `max_new_tokens=2048`. Normal VLMEvalKit discards `o.outputs[0].token_ids`; V_COT observationally captures those raw IDs without changing generation semantics.
-
-## VStarBench Dataset
-- total samples: 191
-- categories: `direct_attributes` and `relative_position`
-- dataset/prompt plumbing verified.
+Pinned VLMEvalKit uses `Qwen2VLChat`. VStarBench follows the standard `ImageMCQDataset` prompt plus Monet's official system prompt. The vLLM generation path is greedy (`temperature=0.0`) with `max_new_tokens=2048`. V_COT observationally captures raw vLLM token IDs without otherwise changing baseline generation semantics.
 
 ## Natural Latent Trigger Characterization — COMPLETE
-### Single-sample probe
-Unforced sample/index 0 naturally emitted one latent segment with start/end positions `[25]` and `[35]` under `LATENT_SIZE=10`. Recorded as `EXP-0001`.
-
-### 20-sample pilot
-- triggered: `8/20 = 0.40`
-- all marker pairs balanced
-- no multi-segment cases
-- every latent segment length = 10
-- exploratory pilot already suggested triggered samples were longer and less often correct under the diagnostic boxed-option parser.
-Recorded as `EXP-0002`.
-
-### Full 191-sample scan
-Recorded as `EXP-0003`.
-
-Core results:
+Full benchmark run over all 191 examples (`EXP-0003`):
 ```text
-samples: 191
-triggered_samples: 72
-trigger_rate: 72/191 = 0.3769633508 (~37.7%)
+triggered_samples: 72/191 = 0.3769633508 (~37.7%)
 balanced_marker_samples: 191/191
 multi_segment_samples: 0/191
 total_latent_segments: 72
 all observed latent segment lengths: 10
 mean_generated_tokens overall: 58.5916
 heuristic_option_correct: 116/191 = 0.60733 (diagnostic only)
-VSTAR_NATURAL_TRIGGER_SCAN_PASS=True
 ```
 
-Because all 191 examples in this pinned VStarBench version were evaluated, 37.7% is the exact benchmark proportion for this run, not a sample estimate of this finite benchmark.
-
-## Full JSONL Trigger-vs-Nontrigger Analysis — VERIFIED
-### Overall
 Triggered (`n=72`):
 ```text
 heuristic_correct: 34/72 = 0.472222
 mean_generated_tokens: 79.778
-median_generated_tokens: 76
-range: 50–116
 ```
 
 Non-triggered (`n=119`):
 ```text
 heuristic_correct: 82/119 = 0.689076
 mean_generated_tokens: 45.773
-median_generated_tokens: 45
-range: 17–94
 ```
 
 Exploratory association tests:
 ```text
-trigger x diagnostic correctness:
-Fisher odds ratio = 0.4037227214
+Fisher exact OR = 0.4037227214
 Fisher two-sided p = 0.0036791367
-
-generated-token count:
 Mann–Whitney U = 8060.5
 Mann–Whitney two-sided p = 1.968701622239151e-24
 ```
 
-### Category level
-`direct_attributes` (`n=115`):
+The same directional correctness gap appears within both benchmark categories, while category trigger rates are similar (`direct_attributes` 38.3%, `relative_position` 36.8%). This supports the restricted observational claim that natural latent triggering is associated with longer trajectories and lower diagnostic correctness; it does not show that latent reasoning causes errors.
+
+## Step 10 Paired Latent-Off Intervention — SMOKE TEST VERIFIED
+Purpose: causally intervene on examples that naturally triggered at baseline by forbidding only the latent-start token while preserving greedy decoding and all other model-vocabulary tokens.
+
+### First implementation attempt — FAILED CLEANLY
+The first implementation used vLLM 0.10.0 `bad_words=["<abs_vis_token>"]`. It failed before generation because `SamplingParams.update_from_tokenizer()` accesses `tokenizer.max_token_id`, which is absent on the installed `Qwen2TokenizerFast`. No model result was produced from this failed path. The runtime environment was not changed.
+
+### Corrected implementation
+`scripts/10_vstar_latent_off_ablation.py` was revised to use vLLM `allowed_token_ids` containing every model-vocabulary token ID except `151666`.
+
+Verified intervention invariants:
+- `model_vocab_size=151670`;
+- allowed token count = `151669`;
+- latent start ID `151666` is excluded;
+- latent end ID `151667` remains allowed;
+- generation output is rejected if `151666` appears;
+- baseline source is the complete Step 09 JSONL;
+- only baseline-triggered examples are selected.
+
+### 5-sample smoke result
+Selected baseline-triggered positions: `[0, 1, 2, 3, 6]`.
+
 ```text
-trigger rate: 44/115 = 0.382609
-overall diagnostic accuracy: 81/115 = 0.704348
-triggered diagnostic accuracy: 25/44 = 0.568182
-non-triggered diagnostic accuracy: 56/71 = 0.788732
-triggered mean tokens: 78.500
-non-triggered mean tokens: 42.014
+n_intervened: 5
+exact_exclusion_verified_samples: 5
+block_verified_samples: 5
+baseline diagnostic correct: 3/5 = 0.60
+latent-off diagnostic correct: 4/5 = 0.80
+accuracy delta: +0.20
+transitions:
+  correct->correct: 3
+  correct->wrong: 0
+  wrong->correct: 1
+  wrong->wrong: 1
+McNemar exact two-sided p: 1.0
+mean tokens baseline: 82.4
+mean tokens latent-off: 72.0
+VSTAR_LATENT_OFF_ABLATION_PASS=True
 ```
 
-`relative_position` (`n=76`):
-```text
-trigger rate: 28/76 = 0.368421
-overall diagnostic accuracy: 35/76 = 0.460526
-triggered diagnostic accuracy: 9/28 = 0.321429
-non-triggered diagnostic accuracy: 26/48 = 0.541667
-triggered mean tokens: 81.786
-non-triggered mean tokens: 51.333
-```
-
-The trigger rates are similar across the two categories (38.3% vs 36.8%), while the triggered-vs-nontriggered correctness and output-length differences occur in both categories. Therefore the overall association is not plausibly explained only by the category mixture.
-
-## Scientific Interpretation
-The full-dataset observation strongly supports the following restricted claim: under the pinned Monet/VStarBench evaluation path, natural latent triggering is associated with longer reasoning trajectories and lower diagnostic option correctness.
-
-It does **not** establish that latent reasoning causes errors. Triggering is endogenous: Monet decides when to emit the latent-start token, so it may be a marker of task difficulty, uncertainty, or a difficult reasoning trajectory. The current evidence therefore argues against treating every naturally emitted latent state as automatically useful supervision.
-
-This is directly relevant to V_COT's intended contribution: latent states should be selected or weighted according to visual evidence and utility, rather than supervised simply because Monet emitted them.
+Interpretation: the smoke test validates the intervention mechanics only. With five examples and one discordant correctness flip, the apparent +20 pp accuracy change is not evidence of benefit (`p=1.0`). The intervention is now approved for the full set of 72 baseline-triggered examples.
 
 ## Baseline Reproduction Status
-Natural-trigger characterization is complete. Formal benchmark reproduction is not yet complete because Monet's README specifies a supplementary API judge for reported benchmark scores. The current boxed-option extractor is diagnostic only and must not be compared directly with Monet's reported VStarBench score.
+Natural-trigger characterization is complete. Formal benchmark-score reproduction is not yet complete because Monet's README specifies a supplementary API judge; V_COT's boxed-option extraction remains diagnostic only.
 
 ## Next Milestones
 - [x] Pin Monet implementation and checkpoint.
 - [x] Reproduce runtime and official example.
 - [x] Verify latent token IDs and official runner patch.
-- [x] Verify forced latent runtime path as an engineering diagnostic.
 - [x] Bring up pinned VLMEvalKit without perturbing Monet core versions.
 - [x] Verify VStarBench dataset/prompt path.
-- [x] Implement observational raw-token capture.
-- [x] Verify unforced natural latent trigger.
-- [x] Run 20-sample trigger pilot.
-- [x] Run all 191 VStarBench examples.
+- [x] Characterize natural latent triggering on all 191 examples.
 - [x] Analyze trigger status vs category, diagnostic correctness, and response length.
+- [x] Implement and verify a clean 5-sample latent-off paired intervention.
+- [ ] Run the latent-off intervention on all 72 baseline-triggered examples.
+- [ ] Analyze paired correctness flips, answer changes, output length, and category-level effects.
 - [ ] Reproduce the official VStarBench baseline score under Monet's documented supplementary-judge protocol.
 - [ ] Freeze the reproduced baseline with a Git tag.
-- [ ] Design and run a causal latent-suppression ablation before interpreting latent utility.
 - [ ] Locate/instrument exact latent-state tensors for the no-training positive/negative visual-evidence separability test.
-- [ ] Start V0 only after those gates pass.
-
-## Proposed Next Scientific Test
-Before V0 training, perform a paired causal ablation using the same VStarBench prompts and greedy decoding:
-1. baseline Monet generation;
-2. latent-suppressed generation where only `<abs_vis_token>` is forbidden at decoding time while all other tokens remain available.
-
-vLLM 0.10.0 supports `bad_words`, which can forbid a specified token sequence. For a clean implementation, first verify locally that `bad_words=["<abs_vis_token>"]` maps exactly to token ID `151666` and does not block `</abs_vis_token>` or alter unrelated tokens. This intervention should be treated as a causal decoding ablation, not as the reproduced baseline.
-
-Primary paired outcomes should be answer changes and correctness changes on the 72 examples that naturally triggered at baseline; all 191 examples can be retained as a secondary analysis. A forced-latent condition on naturally non-triggered examples is more invasive and should not be the first causal test.
+- [ ] Start V0 only after these gates pass.
 
 ## Known Issues
 - GPU server cannot directly access GitHub; use local staging/direct handoff.
 - VLMEvalKit was transferred as an archive and therefore has no local `.git` metadata.
 - Windows-to-Linux transfers can introduce CRLF.
 - vLLM shutdown may emit non-fatal NCCL/resource-tracker warnings.
+- vLLM 0.10.0 `bad_words` preprocessing is incompatible with the installed `Qwen2TokenizerFast` because it expects `max_token_id`; V_COT does not use that path for Step 10.
 
 ## Next Action
-Do not start V0 training yet. First reproduce the official VStarBench score with Monet's documented supplementary-judge protocol, then run the latent-suppression causal ablation. After the reproduced baseline is frozen, proceed to exact latent-tensor instrumentation and the positive/negative visual-evidence separability test.
+Run the corrected Step 10 script with `VCOT_N=0` to intervene on all 72 examples that naturally triggered in the baseline. Do not alter the script or sampling settings. After the run, inspect `exact_exclusion_verified_samples`, `block_verified_samples`, the four paired correctness transitions, McNemar exact p-value, and baseline-vs-latent-off output lengths. Do not start V0 training yet.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
