@@ -166,6 +166,57 @@ A failed experiment must be recorded as carefully as a successful one. Do not de
 
 ---
 
+## EXP-0003 — Full VStarBench natural latent-trigger characterization
+**Status:** COMPLETED
+
+**Date:** 2026-09-13
+
+**Branch:** `main`
+
+**Scripts:** `scripts/09_vstar_natural_trigger_scan.py` and `scripts/09_vstar_natural_trigger_scan.sh`
+
+**Base checkpoint:** local `models/Monet-7B` from `NOVAglow646/Monet-7B`
+
+**Upstream Monet commit:** `08939998d3d643a73a316e349faa34f420429153`
+
+**VLMEvalKit snapshot:** `open-compass/VLMEvalKit@1e2b2f9934cd5ea05e54b8706ab40b09ec3d3ae3`
+
+**Purpose:** Measure natural latent-trigger behavior over the complete 191-example VStarBench dataset under the same observational, unforced evaluation path used in EXP-0002.
+
+**Change from baseline:** Observational raw-token capture only. No forced tokens, no `allowed_token_ids`, and no change to generation semantics.
+
+**Data / benchmark:** Complete `VStarBench`, all dataset positions `0..190`.
+
+**Inference settings:**
+- `VCOT_N=191`
+- `VCOT_SEED=20260913` (set retained for protocol consistency; the full dataset is selected)
+- `LATENT_SIZE=10`
+- latent start ID `151666`
+- latent end ID `151667`
+- greedy decoding through the pinned VLMEvalKit Qwen2VL/vLLM path
+- official Monet evaluation system prompt
+
+**Results:**
+- samples: 191
+- triggered samples: 72
+- natural trigger rate: `72/191 = 0.3769633508` (~37.7%)
+- approximate 95% Wilson interval for trigger proportion: `0.311–0.447`
+- balanced marker samples: 191/191
+- multi-segment samples: 0/191
+- total latent segments: 72
+- mean generated tokens: 58.5916
+- diagnostic heuristic option correct: 116/191
+- diagnostic heuristic option accuracy: `0.6073298429` (~60.7%)
+- `VSTAR_NATURAL_TRIGGER_SCAN_PASS=True`
+
+**Interpretation:** The 20-sample pilot estimate (40%) generalized closely to the full dataset (37.7%), showing that natural latent activation is a substantial and reproducible behavior under the pinned VStarBench evaluation path. Marker accounting remained perfectly balanced over all 191 examples, and every triggered example contained a single latent segment; no multi-segment behavior was observed. The complete-dataset run therefore validates the observational token-capture instrumentation and establishes a benchmark-wide trigger-rate estimate. The 60.7% heuristic option accuracy is still only a diagnostic parser result and must not be compared directly with Monet's reported VStarBench score, which uses supplementary API judging.
+
+**Conclusion:** KEEP. Natural latent triggering is sufficiently common (~38%) and mechanically stable to support downstream analysis and intervention experiments. No claim is made that triggering itself improves or harms accuracy.
+
+**Next action:** Analyze the full JSONL by trigger status and category, including diagnostic correctness and response-length distributions. Then reproduce the official VStarBench baseline score under the documented supplementary-judge protocol before freezing the baseline and proceeding to latent-state tensor instrumentation / V0.
+
+---
+
 ## Experiment Template
 
 ```markdown
