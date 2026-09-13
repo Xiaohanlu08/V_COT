@@ -131,6 +131,35 @@ def main():
     if start_id != LATENT_START_ID or end_id != LATENT_END_ID:
         raise RuntimeError(f"Unexpected latent token IDs: start={start_id}, end={end_id}")
 
+    # Build an exact one-token exclusion mask over the *model* output vocabulary.
+    # We intentionally do not use vLLM 0.10.0 `bad_words` here: its
+    # update_from_tokenizer() expects tokenizer.max_token_id, which is absent on
+    # the Qwen2TokenizerFast instance used by this pinned stack.
+    model_config = json.loads((model_dir / "config.json").read_text(encoding="utf-8"))
+    vocab_size = int(model_config["vocab_size"])
+    if not (0 <= LATENT_START_ID < vocab_size):
+        raise RuntimeError(
+            f"Latent start id {LATENT_START_ID} is outside model vocab_size={vocab_size}"
+        )
+    if not (0 <= LATENT_END_ID < vocab_size):
+        raise RuntimeError(
+            f"Latent end id {LATENT_END_ID} is outside model vocab_size={vocab_size}"
+        )
+
+    allowed_token_ids_latent_off = [
+        token_id for token_id in range(vocab_size)
+        if token_id != LATENT_START_ID
+    ]
+    if LATENT_START_ID in allowed_token_ids_latent_off:
+        raise RuntimeError("Latent-start ID unexpectedly remains in allowed-token set.")
+    if LATENT_END_ID not in allowed_token_ids_latent_off:
+        raise RuntimeError("Latent-end ID was accidentally excluded.")
+
+    print("model vocab_size:", vocab_size)
+    print("latent-off allowed_token_ids count:", len(allowed_token_ids_latent_off))
+    print("latent start allowed:", LATENT_START_ID in allowed_token_ids_latent_off)
+    print("latent end allowed:", LATENT_END_ID in allowed_token_ids_latent_off)
+
     last_capture = {}
     original_generate = model.llm.generate
 
@@ -155,19 +184,19 @@ def main():
                 f"{sampling_params.allowed_token_ids}"
             )
 
-        # Causal intervention: block ONLY the latent-start special token.
-        # vLLM 0.10.0 converts bad_words to token IDs via update_from_tokenizer.
-        sampling_params.bad_words = [LATENT_START_TOKEN]
-        sampling_params.update_from_tokenizer(tokenizer)
-        bad_ids = getattr(sampling_params, "_bad_words_token_ids", None)
-        last_capture["bad_words_token_ids"] = bad_ids
+        # Causal intervention: allow every model-vocabulary ID except the single
+        # latent-start token. This avoids the Qwen2TokenizerFast/max_token_id
+        # incompatibility in vLLM 0.10.0's bad_words preprocessing while making
+        # the exclusion exact (not merely a large negative logit bias).
+        sampling_params.allowed_token_ids = allowed_token_ids_latent_off
+        last_capture["allowed_token_count"] = len(allowed_token_ids_latent_off)
+        last_capture["latent_start_allowed"] = (
+            LATENT_START_ID in allowed_token_ids_latent_off
+        )
+        last_capture["latent_end_allowed"] = (
+            LATENT_END_ID in allowed_token_ids_latent_off
+        )
         last_capture["sampling_params"] = sampling_params
-
-        if not bad_ids or [LATENT_START_ID] not in bad_ids:
-            raise RuntimeError(
-                "Latent-start block was not tokenized to the expected singleton ID. "
-                f"Observed _bad_words_token_ids={bad_ids}"
-            )
 
         outputs = original_generate(*args, **kwargs)
         last_capture["outputs"] = outputs
@@ -199,7 +228,6 @@ def main():
         token_ids = list(candidate.token_ids)
         raw_text = candidate.text
 
-        # The intervention is only valid if latent start never appears.
         residual_start_positions = [
             i for i, token_id in enumerate(token_ids)
             if token_id == LATENT_START_ID
@@ -242,7 +270,9 @@ def main():
             "latent_off_returned_text": returned_text,
             "latent_off_token_ids": token_ids,
             "residual_latent_start_positions": residual_start_positions,
-            "bad_words_token_ids": last_capture.get("bad_words_token_ids"),
+            "allowed_token_count": last_capture.get("allowed_token_count"),
+            "latent_start_allowed": last_capture.get("latent_start_allowed"),
+            "latent_end_allowed": last_capture.get("latent_end_allowed"),
             "transition": transition,
         }
         records.append(record)
@@ -274,13 +304,25 @@ def main():
 
     summary = {
         "dataset": "VStarBench",
-        "intervention": "block only <abs_vis_token> using vLLM bad_words",
+        "intervention": (
+            "allow all model-vocabulary token IDs except <abs_vis_token> "
+            "using vLLM allowed_token_ids"
+        ),
         "selected_from": str(baseline_jsonl),
         "baseline_triggered_total": len(triggered_baseline),
         "n_intervened": len(records),
         "selected_positions": [r["dataset_position"] for r in records],
         "latent_size": 10,
+        "model_vocab_size": vocab_size,
         "latent_start_id": LATENT_START_ID,
+        "latent_end_id": LATENT_END_ID,
+        "allowed_token_count": len(allowed_token_ids_latent_off),
+        "exact_exclusion_verified_samples": sum(
+            r["allowed_token_count"] == vocab_size - 1
+            and r["latent_start_allowed"] is False
+            and r["latent_end_allowed"] is True
+            for r in records
+        ),
         "block_verified_samples": sum(
             len(r["residual_latent_start_positions"]) == 0 for r in records
         ),
