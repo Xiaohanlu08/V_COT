@@ -35,7 +35,7 @@ Verified on 2026-09-12/13:
 - Forced-token checks are engineering diagnostics only, not benchmark evidence.
 
 ## VLMEvalKit Dependency Bring-Up — COMPLETE
-A full unconstrained `pip install -r requirements.txt` was intentionally avoided because it would perturb the verified Monet/Hugging Face stack. Controlled bring-up used a filtered dependency set plus constraints. `rouge==1.0.1` was added as the only undeclared hard import found by the static import audit. `setuptools==81.0.0` restores the legacy `pkg_resources` API required by `openai-clip`.
+A full unconstrained `pip install -r requirements.txt` was intentionally avoided because it would perturb the verified Monet/Hugging Face stack. Controlled bring-up used a filtered dependency set plus constraints. `rouge==1.0.1` was added as the only undeclared hard import found by the static import audit. `setuptools==81.0.0` restores legacy `pkg_resources` compatibility required by `openai-clip`.
 
 Non-fatal messages may still appear:
 - missing `.env` warning;
@@ -65,103 +65,69 @@ V_COT uses the official startup-patch body with the filename corrected from the 
 - Monet system prompt is inserted independently before user content.
 
 ## VStarBench Dataset / Prompt Plumbing — VERIFIED
-Dataset build succeeded:
-```text
-dataset class: ImageMCQDataset
-dataset name: VStarBench
-num samples: 191
-columns: ['index', 'question', 'A', 'B', 'C', 'D', 'answer', 'category', 'image']
-VSTAR_DATASET_PROMPT_PASS=True
-```
-The first prompt is the standard image + MCQ question/options + `Please select the correct answer from the options above.` path.
+Dataset build succeeded with 191 samples and the standard image + MCQ prompt path. `VSTAR_DATASET_PROMPT_PASS=True`.
 
 ## Single-Sample Natural Latent Probe — VERIFIED
-`scripts/08_vstar_single_raw_token_probe.py` and `.sh` were executed successfully on VStarBench sample/index 0 through the pinned VLMEvalKit Qwen2VL/vLLM path.
-
-Verified generation conditions:
+`scripts/08_vstar_single_raw_token_probe.py` and `.sh` verified one unforced natural latent event on sample/index 0:
 ```text
-temperature: 0.0
-max_tokens: 2048
-allowed_token_ids: None
 LATENT_SIZE=10
-```
-Observed:
-```text
-num_generated_tokens: 99
+temperature=0.0
+allowed_token_ids=None
 start_positions: [25]
 end_positions: [35]
-segments: [(25, 35)]
 NATURAL_LATENT_TRIGGER=True
 VSTAR_SINGLE_RAW_TOKEN_PROBE_PASS=True
 ```
-This is direct unforced runtime evidence that Monet can naturally enter latent mode on VStarBench. It is recorded as `EXP-0001`.
+Recorded as `EXP-0001`.
 
 ## 20-Sample Natural Trigger Pilot — VERIFIED
-`scripts/09_vstar_natural_trigger_scan.py` and `.sh` were executed with:
-- `VCOT_N=20`;
-- `VCOT_SEED=20260913`;
-- `LATENT_SIZE=10`;
-- greedy decoding (`temperature=0.0`);
-- no forced-token constraints;
-- official Monet system prompt and pinned Monet runner;
-- pinned VLMEvalKit Qwen2VL/vLLM generation path.
+Recorded as `EXP-0002`.
 
-Selected positions:
-```text
-[13, 14, 24, 34, 41, 48, 53, 59, 85, 93, 95, 96, 101, 107, 126, 127, 138, 159, 176, 177]
-```
-
-Observed summary:
+Summary:
 ```text
 triggered_samples: 8 / 20
 trigger_rate: 0.40
 balanced_marker_samples: 20 / 20
 multi_segment_samples: 0 / 20
-total_latent_segments: 8
 mean_generated_tokens: 53.1
-heuristic_option_correct_count: 14 / 20
-heuristic_option_accuracy: 0.70
+heuristic_option_accuracy: 0.70 (diagnostic only)
+```
+
+Post-hoc subgroup inspection found triggered examples had lower diagnostic option correctness and longer outputs than non-triggered examples. These differences are exploratory and non-causal because Monet chooses when to enter latent mode; trigger status may mark harder or lower-confidence examples. Marker/segment instrumentation was clean.
+
+## Full 191-Sample Natural Trigger Characterization — VERIFIED
+`scripts/09_vstar_natural_trigger_scan.py` and `.sh` were run over all VStarBench positions `0..190` with:
+- `VCOT_N=191`;
+- `VCOT_SEED=20260913` (retained for protocol consistency; all samples are included);
+- `LATENT_SIZE=10`;
+- greedy decoding (`temperature=0.0`);
+- no forced-token constraints and no `allowed_token_ids`;
+- official Monet system prompt and pinned Monet runner;
+- pinned VLMEvalKit Qwen2VL/vLLM evaluation path.
+
+Observed summary:
+```text
+samples: 191
+triggered_samples: 72
+trigger_rate: 0.3769633508 (~37.7%)
+approx. 95% Wilson interval: 0.311–0.447
+balanced_marker_samples: 191 / 191
+multi_segment_samples: 0 / 191
+total_latent_segments: 72
+mean_generated_tokens: 58.5916
+heuristic_option_correct_count: 116 / 191
+heuristic_option_accuracy: 0.60733 (~60.7%; diagnostic only)
 VSTAR_NATURAL_TRIGGER_SCAN_PASS=True
 ```
 
-The approximate 95% Wilson interval for 8/20 is about 0.22–0.61. The 0.70 option accuracy is diagnostic extraction only, not an official Monet/VLMEvalKit score. This run is recorded as `EXP-0002`.
+Interpretation:
+- The 20-sample pilot estimate (40%) generalized closely to the complete dataset (37.7%).
+- Natural latent activation is therefore a substantial and reproducible behavior on VStarBench under the pinned evaluation path.
+- Marker accounting is mechanically stable: all 191 samples have balanced start/end accounting, and all 72 triggered samples contain one latent segment; no multi-segment behavior was observed.
+- The ~60.7% heuristic option accuracy is not the official Monet/VLMEvalKit VStarBench score and must not be compared directly with the paper's supplementary-API-judge result.
+- No causal claim is made about trigger status versus correctness. Triggering may be an endogenous difficulty/uncertainty signal.
 
-## 20-Sample Pilot JSONL Inspection — CLEAN, WITH A STRONG EXPLORATORY PATTERN
-The per-sample JSONL was inspected after EXP-0002.
-
-Triggered group (`n=8`):
-```text
-heuristic_correct: 3/8 = 0.375
-mean_generated_tokens: 77.25
-range: 60–106
-categories: direct_attributes 5, relative_position 3
-```
-
-Non-triggered group (`n=12`):
-```text
-heuristic_correct: 11/12 = 0.917
-mean_generated_tokens: 37.00
-range: 17–51
-categories: direct_attributes 9, relative_position 3
-```
-
-Latent mechanics:
-```text
-latent segment lengths: [10, 10, 10, 10, 10, 10, 10, 10]
-unique lengths: [10]
-all 20 samples have balanced start/end markers
-no multi-segment samples
-```
-
-Exploratory category trigger rates in this small subset:
-- `direct_attributes`: 5/14 = 0.357;
-- `relative_position`: 3/6 = 0.500.
-
-Post-hoc exploratory tests on this 20-sample pilot show a strong association between triggering and lower diagnostic option correctness (Fisher exact two-sided `p≈0.018`) and between triggering and longer generated outputs (Mann–Whitney two-sided `p≈1.6e-5`). These are not confirmatory statistics: the sample is small, the analysis is post-hoc, and the correctness measure is only the diagnostic boxed-option extractor.
-
-Crucially, these associations do **not** show that latent reasoning causes errors. Triggering is endogenous to the model and may instead mark harder examples, uncertainty, or longer reasoning trajectories. This pattern is scientifically relevant to V_COT because it argues against treating every naturally emitted latent state as automatically useful supervision. Full-dataset characterization and later causal/interventional tests are required before drawing utility claims.
-
-The JSONL inspection found no instrumentation anomaly, so the same observational protocol is approved for all 191 VStarBench samples.
+This run is recorded as `EXP-0003` in `EXPERIMENTS.md`.
 
 ## Next Milestones
 - [x] Select and pin Monet upstream implementation.
@@ -178,8 +144,9 @@ The JSONL inspection found no instrumentation anomaly, so the same observational
 - [x] Verify unforced single-sample natural latent trigger.
 - [x] Run reproducible 20-sample VStarBench natural-trigger pilot.
 - [x] Inspect the 20-sample JSONL and verify marker/segment instrumentation is clean.
-- [ ] Expand natural-trigger characterization to all 191 VStarBench samples.
-- [ ] Reproduce selected Monet benchmark baseline under documented settings.
+- [x] Complete full 191-sample VStarBench natural-trigger characterization.
+- [ ] Analyze the full JSONL by trigger status and category, including diagnostic correctness and response-length distributions.
+- [ ] Reproduce the official VStarBench baseline score under Monet's documented supplementary-judge protocol.
 - [ ] Freeze reproduced baseline with a Git tag.
 - [ ] Locate and instrument exact latent-state tensors needed for V0 experiments.
 - [ ] Start V0 only after the above checks pass.
@@ -191,7 +158,7 @@ The JSONL inspection found no instrumentation anomaly, so the same observational
 - vLLM shutdown may emit NCCL/resource-tracker cleanup warnings after successful inference.
 
 ## Next Action
-Run the existing Step 09 observational scan on all 191 VStarBench samples with `VCOT_N=191`, `LATENT_SIZE=10`, the pinned Monet runner, greedy decoding, and no forced-token constraints. Afterward, analyze benchmark-wide trigger rate, marker/segment integrity, trigger rate by category, response-length association, and diagnostic correctness association. Do not interpret triggered-vs-non-triggered accuracy differences causally, and do not start V0 training yet.
+Do not start V0 training yet. First analyze `results/natural_trigger/vstar_n191_seed20260913.jsonl` over the full benchmark to quantify category-level trigger rates and triggered-vs-non-triggered differences in diagnostic correctness and response length. Then reproduce the official VStarBench score using Monet's documented supplementary API judge before freezing the baseline. After that, proceed to latent-state tensor instrumentation and the no-training positive/negative visual-evidence separability test that gates V0.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
