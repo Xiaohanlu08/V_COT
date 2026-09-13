@@ -93,6 +93,13 @@ Therefore V0 must add an explicitly **evidence-discriminative** component beyond
 
 The helper-image structure is heterogeneous across datasets. A single universal negative operator must not be assumed before auditing actual image-pair transformations. In particular, multi-step CogCoM / Zebra-count helper sequences should not be silently treated as equivalent to single zoom/focus helpers.
 
+## Step 21 Storage-Layout Finding — VERIFIED TRANSPORT ISSUE
+The first actual-image helper-pair audit failed before any image was analyzed. The failure is not a bad JSON path: the current Hugging Face revision stores each subset's images as `images.zip`, while the `train.json` paths still refer to member paths such as `Visual_CoT/images/4_0.jpg`. Directly resolving those member paths against the current revision therefore returns HTTP 404.
+
+Repository history shows that the individual `*/images/*.jpg` files existed before the six image directories were deleted and replaced by `images.zip`. The first deletion was `CogCoM/images/`; commit `27bd89f` is the immediately preceding repository state, before any of the six image-directory deletion commits. Step 21b will therefore fetch only the selected JPEGs from historical revision `27bd89f`, while continuing to use the current audited train JSON metadata. This avoids downloading multi-GB zip archives and does not change the scientific sample selection.
+
+This failed transport attempt is not an experiment and creates no scientific result.
+
 ## V0 Design Constraints Now Frozen
 - Reuse Monet Stage 3 rather than creating a new architecture.
 - Preserve the existing CE + teacher-latent alignment objective as the matched baseline component.
@@ -115,4 +122,4 @@ The helper-image structure is heterogeneous across datasets. A single universal 
 - [ ] Move to V1/V2 only if V0 improves the predefined matched evaluation metric.
 
 ## Next Action
-Do not write the V0 loss yet. First inspect a small deterministic, source-stratified set of actual user/helper image pairs to determine which transformation families are present (zoom/crop, annotation/drawing, sequential state, etc.) and whether a same-sample evidence-destroying negative can be generated without introducing a geometry or identity shortcut.
+Retry the same deterministic Step 21 sample selection, but fetch individual selected JPEGs from the pre-archive historical revision `27bd89f`. Do not download full `images.zip` archives and do not change the selected rows.
