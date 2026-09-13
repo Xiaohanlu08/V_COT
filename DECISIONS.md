@@ -144,7 +144,7 @@ This file records project-level decisions so that rejected ideas are not acciden
 
 ---
 
-## D013 — Freeze full-image neutral occlusion for V0 and preserve the official all-layer Stage-3 alignment space
+## D013 — Freeze full-image neutral occlusion for V0 and preserve the official Stage-3 teacher/student tensor space
 **Status:** ACTIVE
 
 **Decision:** Freeze the first V0 Visual_CoT data operator as:
@@ -157,15 +157,17 @@ Do not return to the failed universal disjoint-sham crop for the first V0 pilot.
 
 **Evidence for operator:** Step 24 passed its frozen mechanical gate on all 61 Step-22b strong examples: `61/61` valid, zero dimension/outside-region/ring/change failures, and `frozen_gate_passed=true`. The negative keeps the original full-image geometry and changes only the recovered evidence region.
 
-**Alignment-space decision:** Preserve Monet's official Stage-3 teacher-alignment semantics when designing the V0 evidence loss. Corrected Step 25b confirms that official teacher precompute uses Stage-2 `outputs.hidden_states` with `--output_hidden_states`; Stage 3 uses `--alignment_layer all_layers`; student recurrent `ce_patch_vec` values are injected into latent-pad positions; and the active Stage-3 alignment loss is mean cosine distance between cached teacher hidden states and student all-layer hidden states at those latent positions.
+**Alignment-space decision:** Preserve the same all-layer teacher/student tensors used by Monet's official Stage-3 alignment when designing the V0 evidence loss. Corrected Step 25b confirms that official teacher precompute uses Stage-2 `outputs.hidden_states` with `--output_hidden_states`; Stage 3 uses `--alignment_layer all_layers`; student recurrent `ce_patch_vec` values are injected into latent-pad positions; and the second forward gathers student all-layer hidden states at those positions.
+
+**Exact reduction caveat:** In the pinned source, the active all-layer `alignment_loss` receives tensors documented as `[num_layers, num_align, hidden_dim]` but calls `torch.nn.functional.cosine_similarity(...)` without specifying `dim`; PyTorch therefore uses default `dim=1`, i.e. the alignment-position axis, then averages the result. Preserve this exact behavior in the matched baseline, but do not automatically assume that scalar is the best V0 evidence-ranking metric. Step 26 must expose the runtime tensors so an explicit `dim=-1` per-hidden-vector cosine can be compared as a candidate additional metric without altering the baseline loss.
 
 **Important code finding:** `affine_subspace_alignment_loss` is defined in the pinned model source but has no official Stage-3 call site. It must not be treated as the official Stage-3 alignment objective merely because the helper exists.
 
-**Loss constraint:** Do not yet freeze a raw-`ce_patch_vec` cosine/triplet objective. The first candidate evidence term should compare original and evidence-occluded branches in the official all-layer teacher-alignment space. Exact ranking form, stop-gradient choice, margin/temperature, reduction, and weight require a runtime shape/memory probe first.
+**Loss constraint:** Do not yet freeze a raw-`ce_patch_vec` cosine/triplet objective or blindly rank the official scalar alignment loss. The first candidate evidence term should compare original and evidence-occluded branches using the official teacher/student tensor space. Exact metric, ranking form, stop-gradient choice, margin/temperature, reduction, and weight require a runtime shape/memory probe first.
 
 **Asset constraint:** Use the existing local `models/Monet-7B` for the minimum architecture-identical runtime probe before downloading the 16.6 GB public SFT Stage-2 or Stage-3 checkpoint. Download additional published assets only if the local probe cannot establish the required runtime contract.
 
-**Revisit condition:** Reopen the operator only if the matched V0 pilot fails and a new pre-specified operator is justified. Reopen the alignment-space choice only if runtime inspection demonstrates that the official all-layer path cannot support the evidence comparison safely or efficiently.
+**Revisit condition:** Reopen the operator only if the matched V0 pilot fails and a new pre-specified operator is justified. Reopen the tensor-space choice only if runtime inspection demonstrates that the official Stage-3 tensors cannot support the evidence comparison safely or efficiently.
 
 ---
 
