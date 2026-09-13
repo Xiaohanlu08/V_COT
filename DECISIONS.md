@@ -134,7 +134,7 @@ This file records project-level decisions so that rejected ideas are not acciden
 ---
 
 ## D012 — Reject universal disjoint sham crops; validate full-image recovered-evidence neutral occlusion as the V0 negative
-**Status:** ACTIVE / DATA OPERATOR PENDING MECHANICAL VALIDATION
+**Status:** SUPERSEDED BY D013 AFTER SUCCESSFUL VALIDATION
 
 **Decision:** Keep `Visual_CoT` as the first V0 evidence family, but reject the exact D011 same-source disjoint sham-crop operator as the universal first negative. The next V0 negative candidate is a full-image evidence-destroyed view: recover the task-relevant source region from the official helper crop, preserve the original source dimensions, and neutral-fill that recovered region using a local surrounding-ring RGB statistic.
 
@@ -142,11 +142,30 @@ This file records project-level decisions so that rejected ideas are not acciden
 
 **Reason:** Full-image neutral occlusion is constructible even when the evidence region is large, preserves input geometry, remains same-sample, and directly avoids the crop/full-image geometry confound identified in EXP-0007. It also reuses the intervention family that previously produced target-specific latent sensitivity in the frozen VStarBench confirmatory experiments.
 
-**Constraint:** Do not start V0 training until this recovered-region full-image occlusion operator passes a dataset-level mechanical validation on the exact Step-22b strong cohort. Do not rescue D011 by post-hoc filtering to only the 44 constructible sham cases or by weakening the failed Step-23 thresholds.
+---
 
-**Candidate loss after operator validation:** preserve official Stage-3 CE + teacher alignment, then test a teacher-anchored ranking term in which the original-source student latent must be more compatible with the helper-derived teacher latent than the evidence-occluded-source student latent. The exact tensor alignment, margin, reduction, and weight must be frozen only after auditing the official Stage-3 tensor shapes and loss implementation.
+## D013 — Freeze full-image neutral occlusion for V0 and preserve the official all-layer Stage-3 alignment space
+**Status:** ACTIVE
 
-**Revisit condition:** Reopen if the full-image occlusion operator is mechanically invalid on the frozen training-data cohort, or if the matched V0 pilot fails to improve the pre-defined evaluation.
+**Decision:** Freeze the first V0 Visual_CoT data operator as:
+```text
+positive/student view = original full source image
+negative/student view = same source image with the recovered evidence region neutral-filled by surrounding-ring mean RGB
+teacher target = official helper-derived cached Stage-3 teacher representation
+```
+Do not return to the failed universal disjoint-sham crop for the first V0 pilot.
+
+**Evidence for operator:** Step 24 passed its frozen mechanical gate on all 61 Step-22b strong examples: `61/61` valid, zero dimension/outside-region/ring/change failures, and `frozen_gate_passed=true`. The negative keeps the original full-image geometry and changes only the recovered evidence region.
+
+**Alignment-space decision:** Preserve Monet's official Stage-3 teacher-alignment semantics when designing the V0 evidence loss. Corrected Step 25b confirms that official teacher precompute uses Stage-2 `outputs.hidden_states` with `--output_hidden_states`; Stage 3 uses `--alignment_layer all_layers`; student recurrent `ce_patch_vec` values are injected into latent-pad positions; and the active Stage-3 alignment loss is mean cosine distance between cached teacher hidden states and student all-layer hidden states at those latent positions.
+
+**Important code finding:** `affine_subspace_alignment_loss` is defined in the pinned model source but has no official Stage-3 call site. It must not be treated as the official Stage-3 alignment objective merely because the helper exists.
+
+**Loss constraint:** Do not yet freeze a raw-`ce_patch_vec` cosine/triplet objective. The first candidate evidence term should compare original and evidence-occluded branches in the official all-layer teacher-alignment space. Exact ranking form, stop-gradient choice, margin/temperature, reduction, and weight require a runtime shape/memory probe first.
+
+**Asset constraint:** Use the existing local `models/Monet-7B` for the minimum architecture-identical runtime probe before downloading the 16.6 GB public SFT Stage-2 or Stage-3 checkpoint. Download additional published assets only if the local probe cannot establish the required runtime contract.
+
+**Revisit condition:** Reopen the operator only if the matched V0 pilot fails and a new pre-specified operator is justified. Reopen the alignment-space choice only if runtime inspection demonstrates that the official all-layer path cannot support the evidence comparison safely or efficiently.
 
 ---
 
