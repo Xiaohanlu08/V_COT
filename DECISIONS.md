@@ -103,5 +103,22 @@ This file records project-level decisions so that rejected ideas are not acciden
 
 ---
 
+## D010 — Open the V0 implementation gate after confirmatory target-specific latent sensitivity
+**Status:** ACTIVE
+
+**Decision:** Begin implementation of the V0 SFT-only evidence-aware latent supervision path. Keep Monet architecture and VLPO/RL unchanged. V0 should be implemented as a minimal extension of the official Stage-3 supervised-training path, not as a new model architecture.
+
+**Evidence:** The pre-specified 12-sample direct-attribute confirmatory protocol (`protocols/CONFIRMATORY_OCCLUSION_12.md`) passed its frozen primary rule. All 12 samples were mechanically valid; 10/12 had positive target specificity; median specificity was `+0.0004564524`; the exact one-sided sign-test p-value was `0.0192871`; the exact sign-flip mean p-value was `0.0009765625`.
+
+**What this establishes:** Under the tested full-image neutral-occlusion protocol, Monet recurrent latent states are selectively more sensitive to task-relevant target evidence than to matched nuisance occlusions across the frozen direct-attribute cohort.
+
+**What this does not establish:** It does not prove that latent states improve answer correctness, because the earlier latent-start suppression experiment showed no matched answer-level accuracy effect. It also does not establish universal grounding outside the tested task/operator.
+
+**V0 constraint:** The confirmatory VStarBench cohort is evaluation/probing evidence only and must not be used as V0 training data. V0 must use training data independent of this held-out probing cohort.
+
+**Revisit condition:** If V0 fails to improve the matched Monet baseline under the predefined aggregate evaluation, stop or redesign V0 before moving to V1/V2.
+
+---
+
 ## Decision Protocol
 Any future change that alters the scientific question, base framework, major loss formulation, evaluation criterion, hardware policy, pinned upstream source, or stage order must add a new numbered decision here. Do not silently overwrite an older decision; append a new entry that supersedes it and explain why.
