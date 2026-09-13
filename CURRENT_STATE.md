@@ -111,6 +111,15 @@ For VStarBench position 0, occluding the benchmark-annotated glove perturbs the 
 
 This is **promising target-specific latent sensitivity**, but it is not yet benchmark-level evidence and the single-sample empirical p-value (`0.0606`) is above the conventional `0.05` threshold. Do not claim statistical significance or visual grounding from this one sample. Increasing only the number of sham masks on the same sample would refine its within-image null but would not establish generalization; the next important step is replication across multiple naturally-triggered annotated samples.
 
+## Step 16 — Triggered-72 Official Annotation Mapping Audit PREPARED
+Implemented:
+- `scripts/16_vstar_annotation_mapping_audit.py`
+- `scripts/16_vstar_annotation_mapping_audit.sh`
+
+This is a CPU/no-model audit. It downloads only official V*Bench JSON annotations, maps each of the 72 naturally-triggered VLMEvalKit positions to the official annotation using category + normalized question with option-string disambiguation if needed, records the local image path/size, and reports how many samples have exactly one target object and one bbox.
+
+No multi-sample target-specificity subset will be selected until this mapping audit is observed. The subset should be frozen from metadata/mechanical criteria before any additional target-occlusion outcomes are inspected.
+
 ## Formal Evaluation Caveat
 Monet's README requests a supplementary API judge but does not specify the exact judge model/configuration. Local option-aware rescoring is deterministic but is not the paper's under-specified API judge. This does not block latent-state evidence experiments.
 
@@ -124,7 +133,7 @@ Monet's README requests a supplementary API judge but does not specify the exact
 - [x] Validate fixed-prefix / fixed-trigger replay and original-image tensor reproduction.
 - [x] Establish that the crop-based `I+` vs `I-` hypothesis is not supported on sample 0.
 - [x] Run full-image target-vs-sham occlusion specificity pilot on sample 0.
-- [ ] Audit metadata/annotation mapping for the 72 naturally-triggered samples.
+- [ ] Run Step 16 metadata/annotation mapping audit for the 72 naturally-triggered samples.
 - [ ] Define a preregistered multi-sample subset and run target-vs-sham specificity with the same operator.
 - [ ] Aggregate specificity across samples with paired/nonparametric statistics and category stratification.
 - [ ] Start V0 only if multi-sample evidence supports the visual-evidence gate.
@@ -136,7 +145,7 @@ Monet's README requests a supplementary API judge but does not specify the exact
 - vLLM shutdown may emit non-fatal NCCL/resource-tracker warnings.
 
 ## Next Action
-Do not train V0 and do not spend the next step merely increasing the sham count for position 0. First audit the VLMEvalKit metadata for naturally-triggered samples so each position can be mapped reproducibly to its official V*Bench annotation (`target_object`, `bbox`, question, source image). Then freeze a small multi-sample replication subset before running additional GPU inference.
+Run only Step 16 annotation mapping audit. Do not run additional GPU target-occlusion experiments and do not train V0 until the candidate replication set is frozen from the audit output.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
