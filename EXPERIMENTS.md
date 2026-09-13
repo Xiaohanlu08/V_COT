@@ -120,38 +120,45 @@ mean tokens: 79.7778 -> 80.3333
 
 **Category audit:**
 
-`direct_attributes` (`n=44`):
-```text
-baseline diagnostic accuracy: 25/44 = 0.568182
-latent-off diagnostic accuracy: 16/44 = 0.363636
-delta: -0.204545
-transitions: CC=12, CW=13, WC=4, WW=15
-McNemar exact p = 0.049041748046875
-mean tokens: 78.500 -> 76.909
-```
+`direct_attributes` (`n=44`): baseline diagnostic `25/44=0.568182`, latent-off `16/44=0.363636`, raw delta `-0.204545`, transitions `CC=12, CW=13, WC=4, WW=15`, McNemar `p=0.049041748046875`.
 
-`relative_position` (`n=28`):
-```text
-baseline diagnostic accuracy: 9/28 = 0.321429
-latent-off diagnostic accuracy: 8/28 = 0.285714
-delta: -0.035714
-transitions: CC=6, CW=3, WC=2, WW=17
-McNemar exact p = 1.0
-mean tokens: 81.786 -> 85.714
-```
+`relative_position` (`n=28`): baseline diagnostic `9/28=0.321429`, latent-off `8/28=0.285714`, raw delta `-0.035714`, transitions `CC=6, CW=3, WC=2, WW=17`, McNemar `p=1.0`.
 
-**Critical post-hoc parser audit:**
-- `correct->wrong=16`, but 13/16 latent-off predictions are `None` under the diagnostic option parser.
-- `wrong->correct=6`, but 5/6 baseline predictions are `None` under the diagnostic option parser.
-- Thus `18/22 = 81.8%` of discordant pairs involve parser failure on one side.
-- Only four discordant pairs are explicit option-to-option changes: three `correct->wrong` (`14: B->A`, `29: B->A`, `112: D->A`) and one `wrong->correct` (`100: A->C`).
-- Restricting to those four resolved discordant pairs gives exact McNemar `p=0.625`.
-
-**Interpretation:** The decoding intervention is technically valid and causally removes access to latent-start. However, the apparent correctness benefit of latent access is heavily confounded by answer-format/parser failures. The raw 13.9-point drop and the direct-attributes `p=0.049` must not be treated as reliable evidence of utility until the stored raw outputs are re-judged with a more robust resolver or the intended API judge.
+**Critical parser confound:** 18/22 discordant pairs involve `None` on one side under the old diagnostic parser. The old parser is not suitable for final utility claims.
 
 **Conclusion:** KEEP the intervention; utility conclusion INCONCLUSIVE pending robust re-judging.
 
-**Next action:** Re-judge the stored raw outputs for all 22 discordant pairs, especially the 18 involving `None`, using conservative option-text matching / final-answer parsing. Recompute paired transitions afterward. No model rerun is needed.
+---
+
+## EXP-0005 — Manual audit of discordant paired outputs with parser `None`
+**Status:** COMPLETED
+
+**Date:** 2026-09-13
+
+**Purpose:** Determine whether the 18 discordant baseline-vs-latent-off pairs containing a parser `None` represent genuine answer changes or answer-format/parser artifacts.
+
+**Data:** stored raw outputs from `results/causal_ablation/vstar_latent_off_all_triggered.jsonl`; no model rerun.
+
+**Audit result:**
+- 16/18 apparent flips are parser/format artifacts. Baseline and latent-off give the same semantically correct answer, but one response uses answer text rather than an option letter, e.g. `\boxed{purple}`, `\boxed{silver}`, `\boxed{orange}`, `\boxed{left}`, `\boxed{right}`, or an unboxed semantic answer.
+- Position 61 is a genuine `correct->wrong`: GT `A`; baseline says `white` (option A), while latent-off explicitly ends `FINAL ANSWER: C. golden`.
+- Position 92 is a genuine `wrong->correct`: GT `D`; baseline says `brown` (option B), while latent-off gives black / option D.
+
+**Additional parser failure discovered:** At position 61, the old parser returned latent-off prediction `A` even though the raw output explicitly says `FINAL ANSWER: C. golden`. The cause is the old regex scanning unrestricted prose for standalone letters A-D and matching an earlier article `a`. Therefore the old parser may be wrong even when it returns a non-`None` option.
+
+**Provisional corrected paired table:** If only these 18 audited pairs are fixed while the remaining old labels are left untouched:
+```text
+correct -> correct: 34
+correct -> wrong:   4
+wrong   -> correct: 2
+wrong   -> wrong:   32
+McNemar exact two-sided p = 0.6875
+```
+This table is explicitly provisional and must not be used as the final utility result because non-`None` old-parser outputs can also be wrong.
+
+**Conclusion:** The earlier apparent latent-utility signal is not reliable under the old parser. Full option-aware re-scoring of all 72 stored paired outputs is required before any correctness claim.
+
+**Next action:** Run `scripts/11_rescore_paired_outputs.py` / `.sh`, which performs deterministic option-aware local re-scoring against the actual VStarBench option strings and leaves ambiguous cases unresolved for audit. No model rerun is required.
 
 ---
 
