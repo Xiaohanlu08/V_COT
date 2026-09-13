@@ -1,24 +1,19 @@
 # Current State
 
 ## Project Stage
-V0 preparation: evidence-supported latent contrastive supervision.
+V0 preparation: evidence-discriminative latent supervision.
 
 ## Current Objective
-Translate the confirmed target-specific latent sensitivity signal into the minimal V0 SFT intervention defined in `PROJECT_GOAL.md`, without changing Monet's architecture or RL pipeline.
+Turn the confirmed target-specific latent-sensitivity signal into the smallest architecture-preserving SFT experiment that tests whether same-sample visual-evidence discrimination can make Monet's latent states more useful.
 
 ## Pinned Baseline
 - Monet source: `NOVAglow646/Monet@08939998d3d643a73a316e349faa34f420429153`
 - Current reproduced inference checkpoint: local `models/Monet-7B`
 - VLMEvalKit snapshot: `open-compass/VLMEvalKit@1e2b2f9934cd5ea05e54b8706ab40b09ec3d3ae3`
-- Protected runtime: Python 3.10.21, torch 2.7.1+cu126, torchvision 0.22.1+cu126, transformers 4.54.0, trl 0.15.2, vllm 0.10.0.
+- Protected runtime unchanged: Python 3.10.21, torch 2.7.1+cu126, torchvision 0.22.1+cu126, transformers 4.54.0, trl 0.15.2, vllm 0.10.0.
 
 ## Evidence Gate — PASSED
-The outcome-blind confirmatory direct-attribute cohort was frozen at positions:
-`[6, 11, 22, 23, 27, 53, 57, 59, 67, 71, 102, 112]`
-with SHA-256:
-`f65ebdbefc8a73276877f4096d5cb8897339447c91a31dc68322a811dda487e4`.
-
-EXP-0011 confirmatory result under `protocols/CONFIRMATORY_OCCLUSION_12.md`:
+The outcome-blind 12-sample direct-attribute confirmatory cohort passed the frozen target-vs-sham occlusion gate:
 ```text
 mechanically valid: 12/12
 positive specificity: 10/12
@@ -29,37 +24,26 @@ exact one-sided sign-test p: 0.019287109375
 exact sign-flip mean p:     0.0009765625
 primary_hypothesis_supported: true
 ```
-
-Supported claim: under the tested direct-attribute/full-image neutral-occlusion protocol, masking task-relevant target evidence perturbs Monet's aligned recurrent latent trajectory more than matched nuisance occlusions across samples.
-
-Do **not** claim that this proves answer-level utility or universal visual grounding. The earlier latent-off ablation remained null after robust rescoring (`54/72` vs `54/72`, McNemar `p=1.0`).
+Supported claim: under the tested direct-attribute/full-image neutral-occlusion protocol, masking task-relevant evidence perturbs aligned recurrent Monet latent states more than matched nuisance occlusions. Do not upgrade this to answer-level utility or universal grounding; latent-start suppression remained null after robust rescoring (`54/72` vs `54/72`, McNemar `p=1.0`).
 
 ## V0 Gate Decision
-The evidence gate for beginning V0 is **OPEN**. V0 remains SFT-only and architecture-preserving. VStarBench confirmatory samples are probing/evaluation evidence only and must not be used as V0 training data.
+The evidence gate for V0 is OPEN. V0 remains SFT-only, architecture-preserving, and must not use the VStarBench confirmatory cohort as training data.
 
 ## Monet Stage-3 Integration Facts — VERIFIED
-Official Stage 3 already provides the correct hook points:
-- `collate_fn_sft_stage3` builds student inputs from user/question images after removing auxiliary assistant images;
-- `CustomTrainerSFT_STAGE3` performs a latent forward and exposes `student_outputs_latent.ce_patch_vec`;
-- existing Stage-3 objective is `student_ce_loss + alignment_weight * alignment_loss`;
-- therefore V0 should extend Stage 3 rather than introduce a new architecture.
+Official Stage 3 already:
+- removes assistant/helper images from the student input;
+- exposes student latent states through `student_outputs_latent.ce_patch_vec`;
+- uses helper-image-derived teacher latent supervision;
+- trains with `student_ce_loss + alignment_weight * alignment_loss`.
+The official Stage-3 recipe precomputes teacher latents with the SFT Stage-2 model, then trains the Stage-3 student. Therefore simply reusing helper images as a positive view is not itself a new mechanism.
 
 ## EXP-0012 — Local V0 Stage-3 Asset Audit — COMPLETE
-Step 19 verified source hooks and the local training environment. DeepSpeed is installed and the pinned Monet source is intact, but the large SFT assets/checkpoints are not yet present locally. No package changes are required.
+Pinned source hooks and the local training environment are ready. DeepSpeed is installed. Large SFT assets/checkpoints are not yet local. No package changes are required.
 
 ## EXP-0013 — Monet-SFT-125K Metadata / Schema Audit — COMPLETE
-Step 20b audited the complete six-subset `train.json` metadata without downloading image archives or Stage-3 weight shards.
+All `125072/125072` examples contain a user image and at least one assistant/helper image. `124233/125072 = 99.3292%` contain `<observation>...</observation>` tags.
 
-Global result:
-```text
-total rows: 125072
-rows with user image: 125072 / 125072
-rows with assistant/helper image: 125072 / 125072
-rows with both user and assistant images: 125072 / 125072
-rows with <observation>...</observation>: 124233 / 125072 = 99.3292%
-```
-
-Assistant/helper image multiplicity:
+Helper multiplicity:
 ```text
 1 image : 122072 samples
 2 images: 303
@@ -71,55 +55,70 @@ Assistant/helper image multiplicity:
 8 images: 294
 11 images: 1
 ```
-
-Subset structure:
+Subset sizes:
 ```text
-Visual_CoT              118561 rows; exactly 1 assistant image/sample
-CogCoM                      567 rows; 1-11 assistant images/sample
-ReFocus                     426 rows; almost always 1 assistant image
-Zebra_CoT_count            2766 rows; 2-8 assistant images/sample
-Zebra_CoT_visual_search    2687 rows; exactly 1 assistant image/sample
-Zebra_CoT_geometry           65 rows; almost always 1 assistant image
+Visual_CoT              118561
+CogCoM                      567
+ReFocus                     426
+Zebra_CoT_count            2766
+Zebra_CoT_visual_search    2687
+Zebra_CoT_geometry           65
+```
+Visual_CoT alone is `118561/125072 = 94.7942%` of the official SFT data.
+
+## EXP-0014 — Deterministic Actual Helper-Pair Audit — COMPLETE
+Step 21e successfully inspected the same preselected three examples per source subset using byte-range extraction from the current `images.zip` archives. No full archive was downloaded. The transport path is now mechanically validated and reusable.
+
+Selected rows:
+```text
+Visual_CoT:           [0, 6309, 24820]
+CogCoM:               [0, 497, 565]
+ReFocus:              [0, 66, 225]
+Zebra_CoT_count:      [0, 37, 2251]
+Zebra_CoT_visual_search: [0, 342, 2415]
+Zebra_CoT_geometry:   [0, 42, 62]
 ```
 
-Representative metadata confirms that assistant images are explicit intermediate visual evidence/transformation states paired with `<abs_vis_token></abs_vis_token>` reasoning steps: zoom/focus views, geometry/line-construction views, and sequential scene states are all represented depending on the source dataset.
+Observed transformation families from image dimensions plus the paired reasoning instructions:
+- `Visual_CoT`: all three helpers are much smaller than the source image (`114x161` vs `375x500`; `209x262` vs `281x500`; `61x70` vs `462x308`), consistent with localized crop/zoom evidence.
+- `CogCoM`: helpers preserve the source canvas size and the text explicitly describes drawing line segments / locating chart regions; these are annotation/construction-style intermediate views rather than simple crops.
+- `ReFocus`: helper and source sizes are identical and the text describes focusing/highlighting specific bars or chart regions; these are same-canvas focus/highlight transforms.
+- `Zebra_CoT_count`: 4-8 same-size helper frames are used for viewpoint changes and sequential scene/state tracking; these are multi-step state/view transformations.
+- `Zebra_CoT_visual_search`: two sampled helpers are small localized views (`198x116`, `206x176`) while another is a larger rendered/boxed view (`1232x1848` from `683x1024` source); this subset is itself heterogeneous.
+- `Zebra_CoT_geometry`: helper dimensions remain close to the original canvas and the reasoning is geometry construction/decomposition; these should not be treated as crop positives.
 
-Stage-3 checkpoint index reports total weight size `16,578,684,928` bytes; weight shards were not downloaded.
+This audit rejects a universal helper-image negative operator across all six subsets. The same geometry-preserving negative rule cannot be assumed valid for crop, annotation, highlight, sequential-state, and geometry-construction helpers.
 
-## Critical V0 Design Consequence
-The schema audit confirms that a scalable positive visual-evidence source already exists for every Monet-SFT-125K sample: the assistant/helper image sequence. However, **simply adding those helper images as a positive view is not a new V0 mechanism**, because official Monet Stage 3 already uses helper-image-derived teacher latents to supervise the student latent trajectory.
+## V0 Design Direction — NARROWED, NOT YET FROZEN
+The cleanest first V0 family is `Visual_CoT`, because it is both dominant (~94.8% of SFT data) and appears to provide localized crop/zoom evidence. A scientifically clean candidate construction is:
+1. recover the helper crop's location in the same source image;
+2. use the official helper crop as positive evidence;
+3. sample a same-source, same-size/aspect-ratio sham crop outside the recovered positive region as the negative;
+4. compare latent similarity to positive vs negative evidence, avoiding cross-sample identity shortcuts and avoiding the crop/full-image geometry confound seen in EXP-0007.
 
-Therefore V0 must add an explicitly **evidence-discriminative** component beyond existing Stage-3 positive alignment. The next design task is to define a negative/evidence-destroying counterpart that is causally meaningful and cannot be solved merely by sample identity or unrelated-image mismatch.
-
-The helper-image structure is heterogeneous across datasets. A single universal negative operator must not be assumed before auditing actual image-pair transformations. In particular, multi-step CogCoM / Zebra-count helper sequences should not be silently treated as equivalent to single zoom/focus helpers.
-
-## Step 21 Storage-Layout Finding — VERIFIED TRANSPORT ISSUE
-The first actual-image helper-pair audit failed before any image was analyzed. The failure is not a bad JSON path: the current Hugging Face revision stores each subset's images as `images.zip`, while the `train.json` paths still refer to member paths such as `Visual_CoT/images/4_0.jpg`. Directly resolving those member paths against the current revision therefore returns HTTP 404.
-
-Repository history shows that the individual `*/images/*.jpg` files existed before the six image directories were deleted and replaced by `images.zip`. The first deletion was `CogCoM/images/`; commit `27bd89f` is the immediately preceding repository state, before any of the six image-directory deletion commits. Step 21b will therefore fetch only the selected JPEGs from historical revision `27bd89f`, while continuing to use the current audited train JSON metadata. This avoids downloading multi-GB zip archives and does not change the scientific sample selection.
-
-This failed transport attempt is not an experiment and creates no scientific result.
+This rule is still provisional. Three Visual_CoT examples are insufficient to assume that all 118561 helpers are recoverable crops.
 
 ## V0 Design Constraints Now Frozen
-- Reuse Monet Stage 3 rather than creating a new architecture.
-- Preserve the existing CE + teacher-latent alignment objective as the matched baseline component.
-- Treat official helper images as the existing positive-evidence supervision source, not as the claimed novelty by itself.
-- Add a negative/evidence-destroying contrastive term only after its construction rule is validated.
-- Do not use random cross-sample helper images as the primary negative without an explicit ablation, because that can reduce to sample-identity discrimination rather than visual-evidence discrimination.
-- Do not download Stage1/2 or precomputed teacher latents yet.
+- Reuse Monet; do not add a new architecture.
+- Keep V0 SFT-only; do not touch VLPO yet.
+- Do not claim helper images themselves as the novelty; official Stage 3 already uses positive helper supervision.
+- The novel V0 component must be evidence-discriminative.
+- Do not use random cross-sample images as the primary negative.
+- Do not mix helper transformation families under one negative operator without validation.
+- Do not reconstruct Stage1/2 or download all training assets before the V0 data rule is frozen.
 - Do not start full V0 training yet.
 
 ## Next Milestones
 - [x] Validate target-specific latent sensitivity under outcome-blind multi-sample replication.
-- [x] Audit local Stage-3 source hooks and environment.
-- [x] Establish that local SFT data/checkpoints are currently absent.
-- [x] Audit all Monet-SFT-125K train metadata and helper-image structure.
-- [ ] Audit a small deterministic set of actual user/helper image pairs and classify the helper transformation types.
-- [ ] Freeze the V0 negative/evidence-destroying construction rule.
-- [ ] Download only the assets required by that frozen rule plus the published Stage-3 SFT checkpoint.
-- [ ] Implement the minimal Stage-3 evidence-discriminative loss extension.
+- [x] Audit local Stage-3 hooks/environment.
+- [x] Audit complete Monet-SFT-125K metadata/helper structure.
+- [x] Audit deterministic actual image pairs across all six source subsets.
+- [ ] Quantitatively test Visual_CoT helper-to-source crop recoverability on a substantially larger deterministic sample.
+- [ ] If crop recoverability is high, freeze the same-source matched-sham negative construction.
+- [ ] Download only the published checkpoint/data assets required for the resulting V0 pilot.
+- [ ] Implement the minimal evidence-discriminative loss extension.
 - [ ] Run a tiny deterministic smoke test, then a matched control-vs-V0 pilot.
 - [ ] Move to V1/V2 only if V0 improves the predefined matched evaluation metric.
 
 ## Next Action
-Retry the same deterministic Step 21 sample selection, but fetch individual selected JPEGs from the pre-archive historical revision `27bd89f`. Do not download full `images.zip` archives and do not change the selected rows.
+Run a deterministic quantitative Visual_CoT crop-recoverability audit before writing the V0 loss. The audit should use many more than three examples and should measure whether each helper can be localized back into its own source image with a strong image-match score. Do not use answer accuracy or any downstream V0 outcome to select the examples.
