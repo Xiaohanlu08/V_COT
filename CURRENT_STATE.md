@@ -108,15 +108,41 @@ The category audit exposed that most discordant correctness flips are not clean 
 - of 6 `wrong->correct` flips, 5 have `baseline_predicted_option_diagnostic=None`;
 - therefore 18/22 (81.8%) discordant pairs involve a parser failure (`None`) on one side.
 
-Only four discordant pairs are explicit option-to-option changes under the current parser:
-- `correct->wrong`: 3 (`14: B->A`, `29: B->A`, `112: D->A`);
-- `wrong->correct`: 1 (`100: A->C`).
-For these four resolved discordant pairs alone, exact McNemar is not significant (`p=0.625`).
+## Manual audit of the 18 `None`-discordant pairs — COMPLETE
+The stored raw outputs were manually audited against their semantic answer text. Sixteen of the 18 apparent flips are answer-format/parser artifacts: both baseline and latent-off responses give the same semantically correct answer, but one side outputs an answer word such as `\boxed{purple}`, `\boxed{silver}`, `\boxed{left}`, or an unboxed semantic answer rather than an option letter.
 
-Therefore the previously observed 13.9-point raw diagnostic drop and the direct-attributes `p=0.049` **cannot yet be treated as reliable evidence that latent access improves answer correctness**. They may partly or largely reflect answer-format / parser failures. The intervention itself is valid, but the utility conclusion is pending robust re-judging of the stored raw outputs.
+Two cases are genuine semantic flips:
+- position 61 (`direct_attributes`, GT A): baseline says `white`, which corresponds to option A; latent-off explicitly says `FINAL ANSWER: C. golden` -> genuine `correct->wrong`;
+- position 92 (`direct_attributes`, GT D): baseline says `brown` while option D is `black`; latent-off gives `\boxed{D}` / black -> genuine `wrong->correct`.
+
+This audit also exposed a more serious bug in the old heuristic parser: at position 61 the latent-off raw text explicitly ends in `FINAL ANSWER: C. golden`, yet the old parser returned `A` because it scanned unrestricted prose for any standalone A-D token and matched an earlier article `a`. Therefore non-`None` outputs cannot automatically be trusted either.
+
+If only the 18 audited pairs are corrected while all other old labels are provisionally left unchanged, the paired table becomes:
+```text
+correct -> correct: 34
+correct -> wrong:   4
+wrong   -> correct: 2
+wrong   -> wrong:   32
+provisional McNemar exact p = 0.6875
+```
+This provisional table is **not final**, because the position-61 failure proves that the old parser can also return an incorrect non-`None` letter.
+
+## Option-aware rescoring — IMPLEMENTED, NOT YET RUN
+New scripts:
+- `scripts/11_rescore_paired_outputs.py`
+- `scripts/11_rescore_paired_outputs.sh`
+
+The new resolver does not rerun Monet. It reloads the stored 72 paired raw outputs and the VStarBench options, then applies conservative precedence:
+1. final `\boxed{...}` letter;
+2. final `\boxed{answer text}` matched to option text;
+3. explicit `FINAL ANSWER:` / `ANSWER:` marker;
+4. conservative semantic matching over the final answer-like sentences;
+5. unresolved if ambiguous.
+
+It outputs a new rescored JSONL and summary without modifying the original experiment files.
 
 ## Formal Baseline Reproduction Caveat
-Monet's README says exact matching was replaced by an API judge and instructs users to apply an API model as a supplementary judge, but the evaluation section does not identify the exact judge model/configuration. Current boxed-option extraction is diagnostic only and must not be compared directly with the reported Monet VStarBench score.
+Monet's README says exact matching was replaced by an API judge and instructs users to apply an API model as a supplementary judge, but the evaluation section does not identify the exact judge model/configuration. Current local scoring is diagnostic only and must not be compared directly with the reported Monet VStarBench score.
 
 ## Next Milestones
 - [x] Pin Monet implementation and checkpoint.
@@ -129,7 +155,8 @@ Monet's README says exact matching was replaced by an API judge and instructs us
 - [x] Run paired latent-off intervention over all 72 naturally-triggered examples.
 - [x] Analyze paired intervention by category and transition type.
 - [x] Identify diagnostic-parser confounding in the paired correctness analysis.
-- [ ] Re-judge stored baseline/latent-off raw outputs with a more robust deterministic MCQ resolver and audit all previously `None` cases.
+- [x] Manually audit all 18 discordant pairs involving `None`.
+- [ ] Run option-aware rescoring over all 72 stored paired outputs and audit any remaining unresolved cases.
 - [ ] Recover or document the supplementary API judge protocol sufficiently for formal baseline-score reproduction.
 - [ ] Freeze the reproduced baseline with a Git tag once scoring is documented.
 - [ ] Locate/instrument exact latent-state tensors.
@@ -142,9 +169,10 @@ Monet's README says exact matching was replaced by an API judge and instructs us
 - Windows-to-Linux transfers can introduce CRLF.
 - vLLM shutdown may emit non-fatal NCCL/resource-tracker warnings.
 - Monet evaluation README requires an API judge but does not identify the exact judge model in the evaluation section.
+- The original V_COT diagnostic option parser is known to mis-handle answer-text outputs and can even misread an unboxed final answer letter by matching an earlier article `a`; it must not be used for final paired utility claims.
 
 ## Next Action
-Do not rerun the model yet. First inspect and re-judge the stored raw texts for the 22 discordant paired cases, especially the 18 cases involving `None`, using the VStarBench option strings and conservative final-answer parsing. Recompute the paired transition table only after this audit. Then move to exact latent-tensor instrumentation and the positive/negative visual-evidence separability test. Do not start V0 training yet.
+Do not rerun Monet. Transfer/run Step 11 to rescore all 72 stored paired outputs with the option-aware resolver. Inspect its unresolved positions and recompute the paired transition table. Only after that scoring audit is stable should the project move to exact latent-tensor instrumentation and the positive/negative visual-evidence separability test. Do not start V0 training yet.
 
 ## Update Rule
 After every verified step, update this file with current state, blockers, and next action. Scientific goals belong in `PROJECT_GOAL.md`, design decisions in `DECISIONS.md`, and numerical experiment records in `EXPERIMENTS.md`.
