@@ -120,5 +120,20 @@ This file records project-level decisions so that rejected ideas are not acciden
 
 ---
 
+## D011 — Use Visual_CoT as the first V0 evidence family and same-source matched shams as the candidate negative principle
+**Status:** ACTIVE / NEGATIVE OPERATOR PENDING STEP 23 MECHANICAL VALIDATION
+
+**Decision:** Restrict the first V0 pilot to the `Visual_CoT` helper family rather than mixing all six Monet-SFT-125K transformation families. Use the official helper crop as positive evidence and validate a negative constructed from the same source image with matched crop geometry and no overlap with the positive-evidence region.
+
+**Evidence:** `Visual_CoT` contributes `118561/125072 = 94.7942%` of the official SFT data. The frozen 64-sample robust crop-recoverability audit passed unchanged thresholds: `64/64` pairs valid, `61/64 = 0.953125` strong recoverable, median same-source NCC `0.9923841`, and median same-minus-wrong margin `0.5103442`.
+
+**Reason:** This construction directly controls the two major confounds already observed in the project. A same-source negative avoids sample-identity discrimination from unrelated images, and a same-geometry crop avoids the full-image-vs-crop geometry confound seen in EXP-0007. The other Monet helper families contain annotation, highlighting, state-transition, or geometry-construction transforms and therefore require separate operators.
+
+**Constraint:** The exact same-source sham rule is not frozen until Step 23 passes its pre-specified mechanical gate. Do not start V0 training before that validation.
+
+**Revisit condition:** Reopen if Step 23 fails mechanically, if the resulting V0 pilot shows no matched improvement, or if a later validated operator can safely include additional helper families.
+
+---
+
 ## Decision Protocol
 Any future change that alters the scientific question, base framework, major loss formulation, evaluation criterion, hardware policy, pinned upstream source, or stage order must add a new numbered decision here. Do not silently overwrite an older decision; append a new entry that supersedes it and explain why.
