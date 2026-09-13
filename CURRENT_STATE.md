@@ -67,36 +67,61 @@ Zebra_CoT_geometry           65
 Visual_CoT alone is `118561/125072 = 94.7942%` of the official SFT data.
 
 ## EXP-0014 — Deterministic Actual Helper-Pair Audit — COMPLETE
-Step 21e successfully inspected the same preselected three examples per source subset using byte-range extraction from the current `images.zip` archives. No full archive was downloaded. The transport path is now mechanically validated and reusable.
+Step 21e successfully inspected the same preselected three examples per source subset using byte-range extraction from the current `images.zip` archives. No full archive was downloaded. The transport path is mechanically validated and reusable.
 
-Selected rows:
-```text
-Visual_CoT:           [0, 6309, 24820]
-CogCoM:               [0, 497, 565]
-ReFocus:              [0, 66, 225]
-Zebra_CoT_count:      [0, 37, 2251]
-Zebra_CoT_visual_search: [0, 342, 2415]
-Zebra_CoT_geometry:   [0, 42, 62]
-```
+Observed transformation families:
+- `Visual_CoT`: sampled helpers are much smaller than source images, consistent with localized crop/zoom evidence.
+- `CogCoM`: same-canvas annotation/construction-style views.
+- `ReFocus`: same-canvas focus/highlight transforms.
+- `Zebra_CoT_count`: multi-step state/view transformations.
+- `Zebra_CoT_visual_search`: internally heterogeneous (small crops plus rendered/boxed views).
+- `Zebra_CoT_geometry`: geometry construction/decomposition views.
 
-Observed transformation families from image dimensions plus the paired reasoning instructions:
-- `Visual_CoT`: all three helpers are much smaller than the source image (`114x161` vs `375x500`; `209x262` vs `281x500`; `61x70` vs `462x308`), consistent with localized crop/zoom evidence.
-- `CogCoM`: helpers preserve the source canvas size and the text explicitly describes drawing line segments / locating chart regions; these are annotation/construction-style intermediate views rather than simple crops.
-- `ReFocus`: helper and source sizes are identical and the text describes focusing/highlighting specific bars or chart regions; these are same-canvas focus/highlight transforms.
-- `Zebra_CoT_count`: 4-8 same-size helper frames are used for viewpoint changes and sequential scene/state tracking; these are multi-step state/view transformations.
-- `Zebra_CoT_visual_search`: two sampled helpers are small localized views (`198x116`, `206x176`) while another is a larger rendered/boxed view (`1232x1848` from `683x1024` source); this subset is itself heterogeneous.
-- `Zebra_CoT_geometry`: helper dimensions remain close to the original canvas and the reasoning is geometry construction/decomposition; these should not be treated as crop positives.
-
-This audit rejects a universal helper-image negative operator across all six subsets. The same geometry-preserving negative rule cannot be assumed valid for crop, annotation, highlight, sequential-state, and geometry-construction helpers.
+This rejects a universal negative operator across all six subsets.
 
 ## V0 Design Direction — NARROWED, NOT YET FROZEN
-The cleanest first V0 family is `Visual_CoT`, because it is both dominant (~94.8% of SFT data) and appears to provide localized crop/zoom evidence. A scientifically clean candidate construction is:
-1. recover the helper crop's location in the same source image;
+The cleanest first V0 family is `Visual_CoT`, because it is dominant (~94.8% of SFT data) and appears to provide localized crop/zoom evidence. Candidate construction:
+1. recover the helper crop location in the same source image;
 2. use the official helper crop as positive evidence;
 3. sample a same-source, same-size/aspect-ratio sham crop outside the recovered positive region as the negative;
-4. compare latent similarity to positive vs negative evidence, avoiding cross-sample identity shortcuts and avoiding the crop/full-image geometry confound seen in EXP-0007.
+4. compare latent similarity to positive vs negative evidence.
 
-This rule is still provisional. Three Visual_CoT examples are insufficient to assume that all 118561 helpers are recoverable crops.
+This remains provisional until crop recoverability is quantitatively validated.
+
+## Step 22 — Quantitative Visual_CoT Crop Audit — INVALID IMPLEMENTATION RUN
+The exact outcome-blind cohort was frozen at 64 rows with seed `20260913`:
+```text
+selection_sha256 = b375ac07747c17525187cafc5c842fed1a20a60d1174cc927d5c3f9bc9f89063
+```
+All 64 source/helper image pairs were successfully extracted before matching failed.
+
+The partial matching output is **not scientifically interpretable**. Two implementation defects were exposed:
+1. float32 NCC denominator cancellation on near-constant windows produced mathematically impossible correlation magnitudes greater than 1 (examples included `45.9486`, `1047.7974`, `158.8655`), proving the original NCC implementation was numerically invalid;
+2. a wrong-source control later returned `None`, and logging crashed on `NoneType.__format__` before all 64 samples were evaluated.
+
+Therefore none of the partial Step-22 matching values may be used to judge the crop-family hypothesis.
+
+The frozen scientific thresholds are unchanged:
+```text
+strong sample:
+  same-source NCC >= 0.90
+  same-minus-wrong NCC margin >= 0.05
+
+family success gate:
+  all 64 pairs valid
+  strong fraction >= 0.90
+  median same-source NCC >= 0.95
+  median margin >= 0.10
+```
+
+Step 22b is an implementation-only rerun:
+- exact same 64 rows; no re-sampling;
+- all 64 already-extracted image pairs reused offline;
+- float64 NCC accumulation;
+- near-constant templates/windows rejected instead of epsilon division;
+- mathematical NCC bound `[-1,1]` enforced;
+- wrong-source control remains deterministic cyclic but skips only sources that cannot geometrically fit the helper under any frozen scale; this choice uses dimensions only, never match outcomes;
+- no scientific threshold is relaxed after seeing the failed partial output.
 
 ## V0 Design Constraints Now Frozen
 - Reuse Monet; do not add a new architecture.
@@ -113,12 +138,12 @@ This rule is still provisional. Three Visual_CoT examples are insufficient to as
 - [x] Audit local Stage-3 hooks/environment.
 - [x] Audit complete Monet-SFT-125K metadata/helper structure.
 - [x] Audit deterministic actual image pairs across all six source subsets.
-- [ ] Quantitatively test Visual_CoT helper-to-source crop recoverability on a substantially larger deterministic sample.
-- [ ] If crop recoverability is high, freeze the same-source matched-sham negative construction.
+- [ ] Complete the robust offline rerun of the frozen 64-sample Visual_CoT crop-recoverability audit.
+- [ ] If crop recoverability passes the unchanged gate, freeze the same-source matched-sham negative construction.
 - [ ] Download only the published checkpoint/data assets required for the resulting V0 pilot.
 - [ ] Implement the minimal evidence-discriminative loss extension.
 - [ ] Run a tiny deterministic smoke test, then a matched control-vs-V0 pilot.
 - [ ] Move to V1/V2 only if V0 improves the predefined matched evaluation metric.
 
 ## Next Action
-Run a deterministic quantitative Visual_CoT crop-recoverability audit before writing the V0 loss. The audit should use many more than three examples and should measure whether each helper can be localized back into its own source image with a strong image-match score. Do not use answer accuracy or any downstream V0 outcome to select the examples.
+Run Step 22b offline on the exact 64 image pairs already extracted by Step 22. Do not re-download, re-sample, or alter the frozen thresholds based on the invalid partial Step-22 outputs.
