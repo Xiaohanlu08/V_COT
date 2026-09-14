@@ -25,18 +25,17 @@ exact sign-flip mean p: 0.0009765625
 ```
 This supports target-specific latent sensitivity under the tested full-image neutral-occlusion intervention. It does not establish answer-level utility; latent-start suppression remained null (`54/72` vs `54/72`, McNemar `p=1.0`).
 
-## First V0 Training Family and Frozen Operator
+## First V0 Training Family and Frozen Student Operator
 The first V0 pilot remains restricted to `Visual_CoT`.
 
-Frozen data operator for eligible Visual_CoT examples:
+Frozen student views:
 ```text
-positive/student view: original full source image
-negative/student view: same full image with recovered evidence region neutral-filled by surrounding-ring mean RGB
+positive: original full source image
+negative: same full image with recovered evidence region neutral-filled by surrounding-ring mean RGB
 ```
-The neutral-occlusion operator passed its frozen `61/61` mechanical gate. The same-size disjoint-sham crop failed its frozen constructibility gate and remains rejected.
+The neutral-occlusion operator passed its frozen `61/61` mechanical gate. Same-size disjoint-sham crops remain rejected.
 
 ## Stage-3 Tensor Contract — RESOLVED
-Static and runtime audits established:
 ```text
 latent_size: 8
 ce_patch_vec[b]: Tensor(8,3584)
@@ -44,94 +43,102 @@ ce_patch_pos == student_alignment_poss
 aligned student all-layer hidden tensor: [29,8,3584]
 real Stage-2 teacher tensor: [29,8,3584]
 ```
-Official Stage-3 baseline objective remains:
+Official matched-control objective remains:
 ```text
 L_base = L_CE + lambda_align * L_align_official
 ```
-The pinned all-layer `alignment_loss` uses `cosine_similarity(...)` without an explicit dimension, so the official reduction uses PyTorch default `dim=1` on `[layers, latent_positions, hidden_dim]`. Preserve that exact behavior in matched baseline controls.
+The pinned all-layer baseline alignment uses PyTorch cosine default `dim=1`; preserve that exact behavior in matched controls.
 
 ## Verified Model Assets
-### EXP-0020 — Stage-2 teacher — VERIFIED
-The local Stage-2 safetensors payload exactly matches the index (`16578684928` bytes), container structure is exact, tensor ranges do not overlap, and index/header names match.
+- Stage-2 teacher: structurally verified; do not re-download.
+- Stage-1 Stage-3 initialization: structurally verified and all four upstream shard SHA-256 values match; do not re-download.
+- Stage-3 checkpoint remains unnecessary for current preparation work.
 
-### EXP-0022 — Stage-1 Stage-3 initialization — VERIFIED
-Public Stage-1 checkpoint is locally verified with exact safetensors structure and all four upstream shard SHA-256 hashes matching. Do not re-download Stage-1 or Stage-2. Stage-3 checkpoint remains unnecessary for the current preparation work.
-
-## EXP-0021 — Same-Teacher Natural Ranking on Final Monet — FAILED FROZEN GATE
-Frozen calibration cohort:
-```text
-seed: 20260914
-rows: [48724,53111,59512,68981,81393,90224,94458,117170]
-selection SHA256: 57472e4bfd0e7de389e17a56bfbcfb31f8efdc0c2dfbdb8b07d3c03156d93428
-```
-Pre-specified metric:
+## EXP-0021 / EXP-0023 — SAME-TEACHER NATURAL RANKING REJECTED
+Frozen same-teacher candidate:
 ```text
 D_hidden = mean_{layer,latent}[1 - cosine(T[l,t,:], S[l,t,:])]
-cosine dim = -1
 gap = D_hidden(negative) - D_hidden(positive)
+gate = positive gaps >= 6/8 AND median gap > 0
 ```
-Frozen gate: `positive gaps >= 6/8 AND median gap > 0`.
+Final-Monet student: `5/8` positive gaps, gate false.
 
-Final-Monet student result:
-```text
-positive gaps: 5/8
-median gap: +0.0022175312
-one-sided sign-test p: 0.36328125
-gate: false
-```
+Official Stage-1 student: `3/8` positive gaps, median `-0.0134561360`, gate false.
 
-## EXP-0023 — Same-Teacher Natural Ranking on Official Stage-1 — FAILED FROZEN GATE
-Step 30 changed exactly one factor from EXP-0021: student checkpoint `Monet-7B -> Monet-SFT-7B-stage1`. Stage-2 teacher, 8-row cohort, selection SHA, Step-24 negative operator, explicit `dim=-1` metric, reduction, and gate were unchanged.
-
-Observed explicit-`dim=-1` result:
-```text
-positive gaps: 3/8
-negative-or-zero gaps: 5/8
-mean gap: -0.0029229820
-median gap: -0.0134561360
-min gap: -0.0699743032
-max gap: +0.0632694364
-one-sided sign-test p: 0.85546875
-preferred_metric_viability_gate_passed: false
-```
-Official default-`dim=1` control also failed directionally:
-```text
-positive gaps: 4/8
-median gap: -0.0007473230
-one-sided sign-test p: 0.63671875
-```
-`STAGE1_STUDENT_REAL_TEACHER_GAP_PROBE_PASS=True` is only an execution-completion marker; scientifically the pre-specified metric gate failed.
-
-## Metric Decision — SAME-TEACHER NATURAL RANKING REJECTED
-Checkpoint mismatch is not the explanation for EXP-0021. The unchanged Stage-1 discriminator failed more strongly. Therefore reject the first proposed V0 evidence metric:
+Therefore reject the assumption:
 ```text
 D(T, S_negative) > D(T, S_positive)
 ```
-with one shared official Stage-2 teacher target and explicit hidden-vector cosine `dim=-1`.
+for one shared helper-derived Stage-2 target. Do not rescue it by changing rows, layers, latent positions, thresholds, filters, margins, or switching post-hoc to official `dim=1`.
 
-Do not rescue this branch by:
-- changing the frozen 8 rows;
-- selecting layers or latent positions after inspecting results;
-- relaxing the `6/8` gate;
-- filtering negative-gap samples;
-- switching post-hoc to official `dim=1`;
-- tuning a margin on the failed cohort.
-
-This failure does **not** invalidate the frozen visual intervention or the VStar evidence-sensitivity result. It specifically rejects the assumption that evidence-preserving student states should naturally be closer than evidence-destroyed states to one shared helper-derived Stage-2 target.
-
-## V0 Redesign Principle — COUNTERFACTUAL DELTA, NOT SAME-TARGET RANKING
-The next candidate should represent the *change caused by destroying visual evidence* rather than ranking both views against one teacher target.
-
-Provisional paired formulation:
+## D014 Redesign Principle — COUNTERFACTUAL CHANGE
+The next candidate models the change caused by evidence removal instead of ordering both student views around one teacher target:
 ```text
-T+ = Stage-2 teacher under evidence-preserving source/helper input
-T- = Stage-2 teacher under matched evidence-destroyed source/helper input
-S+ = Stage-1/Stage-3 student under original full source
-S- = same student under frozen Step-24 occluded source
-Delta_T = normalize(T+) - normalize(T-)
-Delta_S = normalize(S+) - normalize(S-)
+T+ = Stage-2 teacher under evidence-preserving source/helper
+T- = Stage-2 teacher under matched evidence-destroyed source/helper
+S+ = Stage-1 student under original source
+S- = Stage-1 student under frozen source occlusion
 ```
-A future evidence term may align `Delta_S` with stop-gradient `Delta_T`, while the official Stage-3 CE + alignment loss remains untouched. This is only a redesign hypothesis; the exact delta metric/loss is not frozen yet.
+The failed 8-row same-teacher cohort must not be reused to select this replacement metric.
+
+## EXP-0024 — Fresh Counterfactual-Delta Cohort Freeze — PASSED
+Data-only Step 31a used no latent/model inference and excluded development row `0` plus all EXP-0021/EXP-0023 rows.
+
+Frozen fresh cohort:
+```text
+seed: 20260914
+rows: [5345,43387,48794,56294,64481,69518,87598,92915,94395,103479,111682,113005]
+selection SHA256: bdd8e027b8f9aa367045dcda049d12aa4745bb3c4f918cc0b6433c7172826798
+```
+Paired Stage-2 teacher views:
+```text
+T+ input = original source + official helper
+T- input = frozen Step-24 occluded source + same-size neutral helper
+```
+The neutral helper uses that sample's already-frozen Step-24 surrounding-ring mean RGB.
+
+Mechanical result:
+```text
+12/12 valid
+helper dimensions preserved: 12/12
+minimum helper changed fraction: 0.9956
+minimum helper mean absolute RGB difference: 20.18
+mechanical_gate_passed: true
+latent_inference_performed: false
+metric_outcomes_seen: false
+```
+The 12 rows and paired teacher intervention are now frozen.
+
+## Step 31b Primary Metric — PRE-SPECIFIED BEFORE INFERENCE
+Protocol: `protocols/STEP31B_COUNTERFACTUAL_DELTA_METRIC.md`.
+
+For tensors `[29,8,3584]`, normalize each hidden vector along `dim=-1`:
+```text
+N(X)[l,t,:] = X[l,t,:] / ||X[l,t,:]||_2
+Delta_T = N(T+) - N(T-)
+Delta_S = N(S+) - N(S-)
+```
+Per layer/latent cell:
+```text
+c[l,t] = cosine(Delta_T[l,t,:], Delta_S[l,t,:], dim=-1)
+w[l,t] = ||Delta_T[l,t,:]||_2
+```
+Primary sample score:
+```text
+score = sum(w*c) / sum(w)
+```
+This uses teacher counterfactual magnitude only as a fixed relevance weight. No layer/latent selection is allowed.
+
+Frozen viability gate:
+```text
+all 12 runtime samples valid and finite
+AND positive primary scores >= 10/12
+AND median primary score > 0
+AND mean primary score > 0
+```
+`10/12` corresponds to one-sided exact sign-test `p=0.019287109375`.
+
+Secondary diagnostics are descriptive only and cannot replace the primary metric after outcomes are seen.
 
 ## Active Constraints
 - No architecture change.
@@ -139,20 +146,22 @@ A future evidence term may align `Delta_S` with stop-gradient `Delta_T`, while t
 - VStar confirmatory samples remain probing/evaluation only, never training data.
 - Keep the frozen Step-24 student negative operator unchanged.
 - Preserve official Stage-3 baseline loss exactly in matched controls.
-- Do not reuse the EXP-0021/0023 8-row cohort to select a replacement metric.
-- Any replacement metric must be pre-specified and tested on a fresh outcome-blind Visual_CoT calibration cohort.
+- Do not reuse the failed 8-row same-teacher cohort to choose replacement metrics.
+- Do not change the fresh 12-row Step-31a cohort after viewing Step-31b outcomes.
+- Do not select layers/latents or switch to a secondary diagnostic post-hoc.
 - Any eventual V0 run requires a matched control with identical data/steps except the new evidence term.
 
 ## Next Milestones
 - [x] Confirm target-specific latent sensitivity.
 - [x] Freeze Visual_CoT full-image neutral occlusion.
 - [x] Resolve Stage-3 tensor/runtime contract.
-- [x] Verify Stage-2 teacher and Stage-1 student initialization.
-- [x] Reject same-teacher explicit-`dim=-1` natural ranking after two unchanged frozen-gate tests.
-- [ ] Freeze a fresh outcome-blind Visual_CoT cohort disjoint from EXP-0021/0023.
-- [ ] Mechanically validate paired evidence-destroyed Stage-2 teacher inputs without looking at delta outcomes.
-- [ ] Pre-specify and test counterfactual teacher/student delta alignment on that fresh cohort.
-- [ ] Only after a passed gate, freeze `L_evidence` and run a deterministic training smoke test.
+- [x] Verify Stage-2 teacher and Stage-1 initialization.
+- [x] Reject same-teacher natural ranking after two unchanged frozen-gate tests.
+- [x] Freeze fresh counterfactual-delta calibration cohort and paired teacher intervention.
+- [x] Pre-specify the primary counterfactual-delta metric and gate before inference.
+- [ ] Run Step 31b on the exact frozen 12 rows.
+- [ ] If the gate passes, proceed to gradient/loss-form and train-time-memory testing.
+- [ ] If the gate fails, reject this delta metric without post-hoc rescue.
 
 ## Next Action
-Run a data-only Step 31a: from the Step-22b strong Visual_CoT pool, exclude development row 0 and all EXP-0021/0023 rows, deterministically freeze a fresh calibration cohort, and mechanically construct the paired evidence-destroyed teacher view. Do not run teacher/student latent inference in the same step.
+Run Step 31b with verified Stage-2 teacher and Stage-1 student on the exact frozen 12-row cohort. No metric, weighting, row, layer, latent-position, or threshold changes are permitted after outcomes are observed.
