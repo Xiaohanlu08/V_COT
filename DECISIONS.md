@@ -84,9 +84,9 @@ This file records project-level decisions so that rejected ideas are not acciden
 ## D008 — Use 3090 for development and reserve H200 for justified scale
 **Status:** ACTIVE
 
-**Decision:** Use the available 4 x RTX 3090 system for baseline inference, latent-state inspection, three-view analysis, and V0 pilot development. Reserve H200-class hardware for full-scale experiments, multi-seed validation, or VLPO/RL workloads when 3090 memory/runtime is no longer efficient.
+**Decision:** Use the available RTX 3090 system for baseline inference, latent-state inspection, three-view analysis, and V0 pilot development. Reserve H200-class hardware for full-scale experiments, multi-seed validation, or VLPO/RL workloads when 3090 memory/runtime is no longer efficient.
 
-**Reason:** The first research questions can be falsified or validated without paying the cost of large-scale H200 runs. The official Monet SFT recipe uses 8 GPUs and ZeRO-2, so a 4 x 3090 training recipe will be treated as an adapted development configuration rather than silently labeled as the official recipe.
+**Reason:** The first research questions can be falsified or validated without paying the cost of large-scale H200 runs. The official Monet SFT recipe uses 8 GPUs and ZeRO-2, so adapted smaller-GPU training must be labeled as such.
 
 **Revisit condition:** Move an earlier stage to H200 only after a measured memory/runtime blocker is recorded.
 
@@ -95,9 +95,9 @@ This file records project-level decisions so that rejected ideas are not acciden
 ## D009 — Prefer mirrors for large external downloads
 **Status:** ACTIVE
 
-**Decision:** Prefer mainland-friendly mirrors for large package/model/source downloads when source identity can still be verified. Current defaults are TUNA for PyPI/Conda, `hf-mirror.net` through `HF_ENDPOINT` for Hugging Face assets, and a GitHub download proxy only as a transport fallback for the public Monet clone.
+**Decision:** Prefer mainland-friendly mirrors for large package/model/source downloads when source identity can still be verified.
 
-**Reason:** Server international bandwidth is limited. Mirror use must not weaken reproducibility: the Monet Git SHA and model repository identity remain authoritative.
+**Reason:** Server international bandwidth is limited. Mirror use must not weaken reproducibility: Git SHAs, repository identity, file structure, and published hashes remain authoritative.
 
 **Revisit condition:** Change mirrors if availability or integrity becomes unreliable. Never commit credentials or tokens to the repository.
 
@@ -108,66 +108,100 @@ This file records project-level decisions so that rejected ideas are not acciden
 
 **Decision:** Begin implementation of the V0 SFT-only evidence-aware latent supervision path. Keep Monet architecture and VLPO/RL unchanged. V0 should be implemented as a minimal extension of the official Stage-3 supervised-training path, not as a new model architecture.
 
-**Evidence:** The pre-specified 12-sample direct-attribute confirmatory protocol (`protocols/CONFIRMATORY_OCCLUSION_12.md`) passed its frozen primary rule. All 12 samples were mechanically valid; 10/12 had positive target specificity; median specificity was `+0.0004564524`; the exact one-sided sign-test p-value was `0.0192871`; the exact sign-flip mean p-value was `0.0009765625`.
+**Evidence:** The pre-specified 12-sample direct-attribute confirmatory protocol passed its frozen primary rule: 12/12 mechanically valid, 10/12 positive specificity, median specificity `+0.0004564524`, one-sided sign-test `p=0.0192871`, sign-flip mean `p=0.0009765625`.
 
 **What this establishes:** Under the tested full-image neutral-occlusion protocol, Monet recurrent latent states are selectively more sensitive to task-relevant target evidence than to matched nuisance occlusions across the frozen direct-attribute cohort.
 
-**What this does not establish:** It does not prove that latent states improve answer correctness, because the earlier latent-start suppression experiment showed no matched answer-level accuracy effect. It also does not establish universal grounding outside the tested task/operator.
+**What this does not establish:** It does not prove that latent states improve answer correctness or establish universal grounding.
 
-**V0 constraint:** The confirmatory VStarBench cohort is evaluation/probing evidence only and must not be used as V0 training data. V0 must use training data independent of this held-out probing cohort.
-
-**Revisit condition:** If V0 fails to improve the matched Monet baseline under the predefined aggregate evaluation, stop or redesign V0 before moving to V1/V2.
+**V0 constraint:** The confirmatory VStarBench cohort is evaluation/probing evidence only and must not be used as V0 training data.
 
 ---
 
 ## D011 — Use Visual_CoT as the first V0 evidence family and same-source matched shams as the candidate negative principle
 **Status:** SUPERSEDED BY D012
 
-**Decision:** Restrict the first V0 pilot to the `Visual_CoT` helper family rather than mixing all six Monet-SFT-125K transformation families. Use the official helper crop as positive evidence and validate a negative constructed from the same source image with matched crop geometry and no overlap with the positive-evidence region.
+**Decision:** Restrict the first V0 pilot to `Visual_CoT` and initially test same-source geometry-matched sham crops.
 
-**Evidence:** `Visual_CoT` contributes `118561/125072 = 94.7942%` of the official SFT data. The frozen 64-sample robust crop-recoverability audit passed unchanged thresholds: `64/64` pairs valid, `61/64 = 0.953125` strong recoverable, median same-source NCC `0.9923841`, and median same-minus-wrong margin `0.5103442`.
-
-**Reason:** This construction directly controlled sample identity and crop geometry.
-
-**Superseded because:** Step 23 failed its pre-specified mechanical gate: only `44/61 = 0.7213114754` strong samples had at least eight valid same-size disjoint sham positions. Seventeen samples were structurally nonconstructible, mainly because the recovered evidence crop occupied too much of the source image.
+**Superseded because:** Step 23 failed its pre-specified constructibility gate with only `44/61` valid cases.
 
 ---
 
-## D012 — Reject universal disjoint sham crops; validate full-image recovered-evidence neutral occlusion as the V0 negative
+## D012 — Reject universal disjoint sham crops; validate full-image recovered-evidence neutral occlusion
 **Status:** SUPERSEDED BY D013 AFTER SUCCESSFUL VALIDATION
 
-**Decision:** Keep `Visual_CoT` as the first V0 evidence family, but reject the exact D011 same-source disjoint sham-crop operator as the universal first negative. The next V0 negative candidate is a full-image evidence-destroyed view: recover the task-relevant source region from the official helper crop, preserve the original source dimensions, and neutral-fill that recovered region using a local surrounding-ring RGB statistic.
+**Decision:** Reject the universal disjoint-sham crop and test full-image neutral occlusion of the recovered evidence region.
 
-**Evidence:** Step 22b validated `Visual_CoT` helper recoverability on a frozen 64-sample cohort (`61/64` strong, median same-source NCC `0.9923841`, median same-minus-wrong margin `0.5103442`). Step 23 then failed the frozen disjoint-sham gate with only `44/61` constructible samples despite zero geometry violations and zero pixel-identical negatives among constructible cases.
-
-**Reason:** Full-image neutral occlusion is constructible even when the evidence region is large, preserves input geometry, remains same-sample, and directly avoids the crop/full-image geometry confound identified in EXP-0007. It also reuses the intervention family that previously produced target-specific latent sensitivity in the frozen VStarBench confirmatory experiments.
+**Reason:** It preserves full-image geometry, remains same-sample, and is constructible even when evidence occupies a large fraction of the image.
 
 ---
 
-## D013 — Freeze full-image neutral occlusion for V0 and preserve the official Stage-3 teacher/student tensor space
+## D013 — Freeze full-image neutral occlusion and preserve the official Stage-3 tensor space
 **Status:** ACTIVE
 
-**Decision:** Freeze the first V0 Visual_CoT data operator as:
+**Decision:** Freeze the first V0 Visual_CoT student-view operator as:
 ```text
-positive/student view = original full source image
-negative/student view = same source image with the recovered evidence region neutral-filled by surrounding-ring mean RGB
-teacher target = official helper-derived cached Stage-3 teacher representation
+positive = original full source image
+negative = same source with recovered evidence region neutral-filled by surrounding-ring mean RGB
 ```
-Do not return to the failed universal disjoint-sham crop for the first V0 pilot.
+Preserve the official Stage-3 all-layer teacher/student tensor space and official baseline loss in matched controls.
 
-**Evidence for operator:** Step 24 passed its frozen mechanical gate on all 61 Step-22b strong examples: `61/61` valid, zero dimension/outside-region/ring/change failures, and `frozen_gate_passed=true`. The negative keeps the original full-image geometry and changes only the recovered evidence region.
+**Evidence:** Step 24 passed the frozen mechanical gate on all `61/61` strong samples. Runtime audits established aligned tensors `[29,8,3584]` and the exact official Stage-3 baseline path.
 
-**Alignment-space decision:** Preserve the same all-layer teacher/student tensors used by Monet's official Stage-3 alignment when designing the V0 evidence loss. Corrected Step 25b confirms that official teacher precompute uses Stage-2 `outputs.hidden_states` with `--output_hidden_states`; Stage 3 uses `--alignment_layer all_layers`; student recurrent `ce_patch_vec` values are injected into latent-pad positions; and the second forward gathers student all-layer hidden states at those positions.
+**Important caveat:** The official all-layer `alignment_loss` uses PyTorch cosine default `dim=1`; preserve it in the baseline but do not assume it is the correct evidence metric.
 
-**Exact reduction caveat:** In the pinned source, the active all-layer `alignment_loss` receives tensors documented as `[num_layers, num_align, hidden_dim]` but calls `torch.nn.functional.cosine_similarity(...)` without specifying `dim`; PyTorch therefore uses default `dim=1`, i.e. the alignment-position axis, then averages the result. Preserve this exact behavior in the matched baseline, but do not automatically assume that scalar is the best V0 evidence-ranking metric. Step 26 must expose the runtime tensors so an explicit `dim=-1` per-hidden-vector cosine can be compared as a candidate additional metric without altering the baseline loss.
+---
 
-**Important code finding:** `affine_subspace_alignment_loss` is defined in the pinned model source but has no official Stage-3 call site. It must not be treated as the official Stage-3 alignment objective merely because the helper exists.
+## D014 — Reject same-teacher natural ranking; redesign V0 around counterfactual change
+**Status:** ACTIVE
 
-**Loss constraint:** Do not yet freeze a raw-`ce_patch_vec` cosine/triplet objective or blindly rank the official scalar alignment loss. The first candidate evidence term should compare original and evidence-occluded branches using the official teacher/student tensor space. Exact metric, ranking form, stop-gradient choice, margin/temperature, reduction, and weight require a runtime shape/memory probe first.
+**Decision:** Reject the first proposed evidence-metric assumption that both original and evidence-occluded student states should be ranked against one shared helper-derived Stage-2 target using explicit hidden-vector cosine distance:
+```text
+D(T, S_negative) > D(T, S_positive)
+```
+Do not use this same-teacher ranking as the first V0 evidence loss.
 
-**Asset constraint:** Use the existing local `models/Monet-7B` for the minimum architecture-identical runtime probe before downloading the 16.6 GB public SFT Stage-2 or Stage-3 checkpoint. Download additional published assets only if the local probe cannot establish the required runtime contract.
+**Evidence:** The pre-specified metric failed the unchanged viability gate twice on the same frozen 8-row calibration cohort:
 
-**Revisit condition:** Reopen the operator only if the matched V0 pilot fails and a new pre-specified operator is justified. Reopen the tensor-space choice only if runtime inspection demonstrates that the official Stage-3 tensors cannot support the evidence comparison safely or efficiently.
+Final `Monet-7B` student:
+```text
+positive gaps: 5/8
+median gap: +0.0022175312
+gate: false
+```
+
+Official Stage-1 student initialization:
+```text
+positive gaps: 3/8
+mean gap: -0.0029229820
+median gap: -0.0134561360
+one-sided sign-test p: 0.85546875
+gate: false
+```
+The Stage-1 rerun changed only the student checkpoint, so checkpoint mismatch does not rescue the assumption. The official default-`dim=1` control also failed and must not be selected post-hoc.
+
+**What is rejected:** The *same-target directional ordering assumption* and losses that depend on it.
+
+**What is not rejected:**
+- the frozen Visual_CoT neutral-occlusion operator;
+- the VStar target-specific latent-sensitivity evidence;
+- official Stage-3 teacher alignment as part of the baseline;
+- using paired visual interventions for an auxiliary V0 objective.
+
+**Redesign principle:** The next V0 candidate should model the *counterfactual change induced by removing task-relevant visual evidence*, rather than forcing both views to be ordered around one teacher state. A provisional direction is paired counterfactual delta distillation:
+```text
+T+ = Stage-2 teacher under evidence-preserving source/helper input
+T- = Stage-2 teacher under matched evidence-destroyed source/helper input
+S+ = student under original source
+S- = student under frozen neutral-occluded source
+Delta_T = normalize(T+) - normalize(T-)
+Delta_S = normalize(S+) - normalize(S-)
+```
+The exact delta similarity, weighting, stop-gradient policy, and loss are **not frozen**.
+
+**Anti-metric-shopping rule:** Do not reuse the failed 8-row cohort to choose the replacement metric. Freeze a fresh outcome-blind Visual_CoT cohort first, mechanically validate the paired teacher intervention, then pre-specify the delta metric/gate before running latent inference.
+
+**Revisit condition:** Reopen same-teacher ranking only with genuinely new evidence from an independently motivated formulation, not by changing thresholds/layers/samples on the failed cohort.
 
 ---
 
