@@ -95,7 +95,7 @@ This file records project-level decisions so that rejected ideas are not acciden
 ## D009 — Prefer mirrors for large external downloads
 **Status:** ACTIVE
 
-**Decision:** Prefer mainland-friendly mirrors for large package/model/source downloads when source identity can still be verified.
+**Decision:** Prefer mainland-friendly mirrors for large external downloads when source identity can still be verified.
 
 **Reason:** Server international bandwidth is limited. Mirror use must not weaken reproducibility: Git SHAs, repository identity, file structure, and published hashes remain authoritative.
 
@@ -180,28 +180,55 @@ gate: false
 ```
 The Stage-1 rerun changed only the student checkpoint, so checkpoint mismatch does not rescue the assumption. The official default-`dim=1` control also failed and must not be selected post-hoc.
 
-**What is rejected:** The *same-target directional ordering assumption* and losses that depend on it.
+**What is rejected:** The same-target directional ordering assumption and losses that depend on it.
 
-**What is not rejected:**
-- the frozen Visual_CoT neutral-occlusion operator;
-- the VStar target-specific latent-sensitivity evidence;
-- official Stage-3 teacher alignment as part of the baseline;
-- using paired visual interventions for an auxiliary V0 objective.
+**What is not rejected:** the frozen Visual_CoT neutral-occlusion operator, the VStar target-specific latent-sensitivity evidence, official Stage-3 teacher alignment as part of the baseline, or paired visual interventions for an auxiliary V0 objective.
 
-**Redesign principle:** The next V0 candidate should model the *counterfactual change induced by removing task-relevant visual evidence*, rather than forcing both views to be ordered around one teacher state. A provisional direction is paired counterfactual delta distillation:
-```text
-T+ = Stage-2 teacher under evidence-preserving source/helper input
-T- = Stage-2 teacher under matched evidence-destroyed source/helper input
-S+ = student under original source
-S- = student under frozen neutral-occluded source
-Delta_T = normalize(T+) - normalize(T-)
-Delta_S = normalize(S+) - normalize(S-)
-```
-The exact delta similarity, weighting, stop-gradient policy, and loss are **not frozen**.
+**Redesign principle:** Model the counterfactual change induced by removing task-relevant visual evidence rather than forcing both views to be ordered around one teacher state.
 
 **Anti-metric-shopping rule:** Do not reuse the failed 8-row cohort to choose the replacement metric. Freeze a fresh outcome-blind Visual_CoT cohort first, mechanically validate the paired teacher intervention, then pre-specify the delta metric/gate before running latent inference.
 
-**Revisit condition:** Reopen same-teacher ranking only with genuinely new evidence from an independently motivated formulation, not by changing thresholds/layers/samples on the failed cohort.
+---
+
+## D015 — Freeze the counterfactual-delta metric family for V0
+**Status:** ACTIVE / LOSS WEIGHT PENDING ENGINEERING CALIBRATION
+
+**Decision:** Use the counterfactual-delta metric that passed EXP-0025 as the first V0 evidence-metric family. For all-layer tensors `[29,8,3584]`:
+```text
+N(X)[l,t,:] = X[l,t,:] / ||X[l,t,:]||_2
+Delta_T = N(T+) - N(T-)
+Delta_S = N(S+) - N(S-)
+c[l,t] = cosine(Delta_T[l,t,:], Delta_S[l,t,:], dim=-1)
+w[l,t] = ||Delta_T[l,t,:]||_2
+score = sum(w*c) / sum(w)
+```
+where `T+`/`T-` are paired Stage-2 teacher states and `S+`/`S-` are paired Stage-1/Stage-3 student states.
+
+**Evidence:** On the fresh outcome-blind 12-row Step-31a cohort, the pre-specified gate passed exactly as frozen:
+```text
+runtime valid: 12/12
+positive primary scores: 10/12
+mean score: +0.0067885655
+median score: +0.0069745332
+one-sided exact sign-test p: 0.019287109375
+gate: true
+```
+
+**Direct loss form:** Use the monotonic loss
+```text
+L_evidence_raw = 1 - score
+```
+without introducing a margin, temperature, layer selector, latent-position selector, or secondary metric.
+
+**Gradient policy:** Teacher tensors, `Delta_T`, and `w` are fixed/stop-gradient. The validated student quantity is `Delta_S=N(S+)-N(S-)`; therefore both student branches remain differentiable by default. A stop-gradient on either student branch would change the validated optimization target and requires a new documented decision if ever introduced.
+
+**Not yet frozen:** `lambda_evidence`. Do not choose it from the raw scalar loss magnitude. First verify representation gradients, then measure parameter-gradient scale and train-time memory in the actual Stage-3 path.
+
+**What this pass establishes:** Directional alignment of evidence-removal-induced latent change between teacher and student under the frozen paired Visual_CoT intervention on the fresh calibration cohort.
+
+**What this does not establish:** Benchmark improvement, answer-level utility, full-data coverage, train-time stability, or an optimal evidence-loss weight.
+
+**Revisit condition:** Reopen the metric family only if the direct loss is mechanically non-differentiable/unstable in the real Stage-3 path or if a matched V0 experiment fails and a new independently motivated formulation is pre-specified.
 
 ---
 
