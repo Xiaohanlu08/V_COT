@@ -71,16 +71,6 @@ D(T, S_negative) > D(T, S_positive)
 ```
 for one shared helper-derived Stage-2 target. Do not rescue it by changing rows, layers, latent positions, thresholds, filters, margins, or switching post-hoc to official `dim=1`.
 
-## D014 Redesign Principle — COUNTERFACTUAL CHANGE
-The next candidate models the change caused by evidence removal instead of ordering both student views around one teacher target:
-```text
-T+ = Stage-2 teacher under evidence-preserving source/helper
-T- = Stage-2 teacher under matched evidence-destroyed source/helper
-S+ = Stage-1 student under original source
-S- = Stage-1 student under frozen source occlusion
-```
-The failed 8-row same-teacher cohort must not be reused to select this replacement metric.
-
 ## EXP-0024 — Fresh Counterfactual-Delta Cohort Freeze — PASSED
 Data-only Step 31a used no latent/model inference and excluded development row `0` plus all EXP-0021/EXP-0023 rows.
 
@@ -97,48 +87,53 @@ T- input = frozen Step-24 occluded source + same-size neutral helper
 ```
 The neutral helper uses that sample's already-frozen Step-24 surrounding-ring mean RGB.
 
-Mechanical result:
-```text
-12/12 valid
-helper dimensions preserved: 12/12
-minimum helper changed fraction: 0.9956
-minimum helper mean absolute RGB difference: 20.18
-mechanical_gate_passed: true
-latent_inference_performed: false
-metric_outcomes_seen: false
-```
-The 12 rows and paired teacher intervention are now frozen.
+Mechanical result: `12/12` valid. The rows and paired teacher intervention are frozen.
 
-## Step 31b Primary Metric — PRE-SPECIFIED BEFORE INFERENCE
-Protocol: `protocols/STEP31B_COUNTERFACTUAL_DELTA_METRIC.md`.
-
-For tensors `[29,8,3584]`, normalize each hidden vector along `dim=-1`:
+## EXP-0025 — Counterfactual-Delta Metric — PASSED PRE-SPECIFIED GATE
+Frozen primary metric on tensors `[29,8,3584]`:
 ```text
 N(X)[l,t,:] = X[l,t,:] / ||X[l,t,:]||_2
 Delta_T = N(T+) - N(T-)
 Delta_S = N(S+) - N(S-)
-```
-Per layer/latent cell:
-```text
 c[l,t] = cosine(Delta_T[l,t,:], Delta_S[l,t,:], dim=-1)
 w[l,t] = ||Delta_T[l,t,:]||_2
-```
-Primary sample score:
-```text
 score = sum(w*c) / sum(w)
 ```
-This uses teacher counterfactual magnitude only as a fixed relevance weight. No layer/latent selection is allowed.
+Teacher counterfactual magnitude is the only weighting term; no layer/latent selection is used.
 
-Frozen viability gate:
+Frozen gate:
 ```text
 all 12 runtime samples valid and finite
 AND positive primary scores >= 10/12
 AND median primary score > 0
 AND mean primary score > 0
 ```
-`10/12` corresponds to one-sided exact sign-test `p=0.019287109375`.
+Observed result:
+```text
+runtime valid: 12/12
+positive primary scores: 10/12
+negative-or-zero: 2/12
+mean primary score: +0.0067885655
+median primary score: +0.0069745332
+min: -0.0266901013
+max: +0.0355119444
+one-sided exact sign-test p: 0.019287109375
+counterfactual_delta_viability_gate_passed: true
+```
+Secondary unweighted score was positive in aggregate (`mean +0.0031231965`, `median +0.0030090895`) but remains descriptive only.
 
-Secondary diagnostics are descriptive only and cannot replace the primary metric after outcomes are seen.
+## Evidence Metric Decision — COUNTERFACTUAL-DELTA FAMILY FROZEN
+The validated replacement metric family is the teacher-delta-magnitude-weighted cosine alignment between `Delta_T` and `Delta_S` defined above.
+
+Direct candidate loss form:
+```text
+L_evidence_raw = 1 - score
+```
+The teacher tensors, `Delta_T`, and weights `w` are fixed / stop-gradient. The validated `Delta_S` definition uses both student branches, so both `S+` and `S-` should remain differentiable unless a future engineering blocker forces a separately documented redesign.
+
+Do not introduce a margin, temperature, layer selection, latent-position selection, or secondary metric substitution at this stage.
+
+`lambda_evidence` is **not yet frozen**. Train-time gradient scale and memory feasibility must be measured before choosing it.
 
 ## Active Constraints
 - No architecture change.
@@ -146,8 +141,8 @@ Secondary diagnostics are descriptive only and cannot replace the primary metric
 - VStar confirmatory samples remain probing/evaluation only, never training data.
 - Keep the frozen Step-24 student negative operator unchanged.
 - Preserve official Stage-3 baseline loss exactly in matched controls.
-- Do not reuse the failed 8-row same-teacher cohort to choose replacement metrics.
-- Do not change the fresh 12-row Step-31a cohort after viewing Step-31b outcomes.
+- Same-teacher ranking remains rejected.
+- Do not change the fresh 12-row counterfactual calibration cohort after seeing EXP-0025 outcomes.
 - Do not select layers/latents or switch to a secondary diagnostic post-hoc.
 - Any eventual V0 run requires a matched control with identical data/steps except the new evidence term.
 
@@ -158,10 +153,11 @@ Secondary diagnostics are descriptive only and cannot replace the primary metric
 - [x] Verify Stage-2 teacher and Stage-1 initialization.
 - [x] Reject same-teacher natural ranking after two unchanged frozen-gate tests.
 - [x] Freeze fresh counterfactual-delta calibration cohort and paired teacher intervention.
-- [x] Pre-specify the primary counterfactual-delta metric and gate before inference.
-- [ ] Run Step 31b on the exact frozen 12 rows.
-- [ ] If the gate passes, proceed to gradient/loss-form and train-time-memory testing.
-- [ ] If the gate fails, reject this delta metric without post-hoc rescue.
+- [x] Pass the pre-specified counterfactual-delta metric gate.
+- [ ] Verify the direct loss `1-score` has finite/nonzero gradients to both student branches at representation level.
+- [ ] Measure full Stage-3 + evidence-loss train-time memory/gradient behavior.
+- [ ] Freeze `lambda_evidence` using pre-specified gradient-scale criteria.
+- [ ] Run a deterministic matched baseline vs V0 smoke test.
 
 ## Next Action
-Run Step 31b with verified Stage-2 teacher and Stage-1 student on the exact frozen 12-row cohort. No metric, weighting, row, layer, latent-position, or threshold changes are permitted after outcomes are observed.
+Run a representation-gradient audit of the frozen direct loss `L_evidence_raw = 1 - score` without changing the metric. Confirm finite/nonzero gradients reach both `S+` and `S-`, while teacher deltas/weights remain stop-gradient. Do not choose `lambda_evidence` from loss magnitude alone; parameter-gradient scale must be measured later.
