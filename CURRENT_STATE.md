@@ -105,51 +105,62 @@ Verified on the pinned Monet source:
 - pinned all-layer `alignment_loss` calls `cosine_similarity(...)` without explicit `dim`, so the active reduction uses PyTorch default `dim=1` on `[layers, align_positions, hidden_dim]`.
 
 ## EXP-0019 — Stage-3 Runtime Contract Probe — PASSED
-Step 26 first established the latent-forward contract but aborted only in its synthetic hidden-state diagnostic because the probe omitted `alignment_poss`. Step 26b corrected only that probe plumbing and completed successfully.
-
-Verified runtime contract on Visual_CoT row 0 using existing local `models/Monet-7B`, `latent_size=8`, and the frozen Step-24 occluded negative:
+Verified on Visual_CoT row 0 using local `models/Monet-7B`, `latent_size=8`, and the frozen Step-24 occluded negative:
 ```text
-positive input_ids: [1,334]
-negative input_ids: [1,334]
-token IDs identical: true
+positive/negative input_ids: [1,334], identical
 alignment positions: [308,309,310,311,312,313,314,315]
 positive ce_patch_vec: list[Tensor(8,3584)] bf16
 negative ce_patch_vec: list[Tensor(8,3584)] bf16
-positive ce_patch_pos == negative ce_patch_pos == alignment positions: true
-aligned hidden tensor: [29,8,3584]
-positive/negative aligned hidden shapes identical: true
+ce_patch_pos == alignment positions: true
+positive/negative aligned hidden tensor: [29,8,3584]
 ```
-Sequential inference-only memory/runtime on the tested GPU:
-```text
-model baseline allocated: 15.4875 GiB
-positive latent peak allocated: 15.5637 GiB
-negative latent peak allocated: 15.5807 GiB
-positive hidden-forward peak allocated: 15.6453 GiB
-alignment probe peak allocated: 15.6853 GiB
-```
-These values do not establish train-time feasibility because no backward/optimizer graph was present.
+Sequential inference-only memory remained below about `15.69 GiB` peak allocated on the tested GPU. This does not establish train-time feasibility because no backward/optimizer graph was present.
 
 Synthetic self-target mechanics only:
 ```text
-official/default-dim alignment gap (negative-positive): ~0.07763
+official/default-dim gap (negative-positive): ~0.07763
 explicit dim=-1 hidden-vector gap: ~0.01979
 ```
-The synthetic target is not the official Stage-2 teacher and these values must not be used to select a margin or make a scientific claim.
+These synthetic values are not official Stage-2 teacher measurements and must not be used to choose V0 hyperparameters.
 
-## Candidate V0 Loss — TENSOR SPACE RESOLVED, SCALE NOT YET FROZEN
+## EXP-0020 — Public Stage-2 Teacher Asset Acquisition — VERIFIED
+The only additional model asset justified after EXP-0019 was the public Stage-2 teacher used by official Stage-3 precompute. Acquired only:
+```text
+NOVAglow646/Monet-SFT-7B/stage2
+local: models/Monet-SFT-7B-stage2
+```
+Stage-1 and Stage-3 were not downloaded.
+
+The first Step-27 final equality check was invalid because it compared total safetensors container-file bytes to `model.safetensors.index.json:metadata.total_size`. Step 27b corrected verification by parsing each safetensors header and summing tensor `data_offsets` payload bytes.
+
+Verified Stage-2 structure:
+```text
+index tensor payload bytes: 16578684928
+parsed tensor payload bytes: 16578684928
+local container file bytes: 16578766160
+container/header overhead: 81232 bytes
+all shard container sizes exact: true
+all tensor byte ranges non-overlapping: true
+per-shard index names match headers: true
+global index names match: true
+```
+Shard SHA-256:
+```text
+model-00001-of-00004.safetensors  daa156afaf34fed7be870dbccdd12db0e3e92187c9d755f31653c4ccb6ce2954
+model-00002-of-00004.safetensors  5140dfeab39fe95c784bc8bfd4e3279b1ff2059e376ea58aebedd3bb290e5799
+model-00003-of-00004.safetensors  bd55afc3a00da7cd44099e9e0fc21a1d535a62ee039e79dacc050afc64117aab
+model-00004-of-00004.safetensors  debf05227df9795774a51a1fc49e1b980e731999861565f1cb986408c4514d73
+```
+The Stage-2 asset is therefore structurally verified and should not be re-downloaded.
+
+## Candidate V0 Loss — TENSOR SPACE RESOLVED, REAL TEACHER SCALE PENDING
 Preserve the matched baseline exactly:
 ```text
 L_base = L_CE + lambda_align * L_align_official
 ```
-The additional evidence term should compare the original and evidence-occluded branches against the same official Stage-2 teacher target in the verified all-layer tensor space `[29, latent_count, 3584]`.
+The evidence term should compare original and evidence-occluded student branches against the same official Stage-2 teacher target in the verified all-layer tensor space `[29, latent_count, 3584]`.
 
-Runtime inspection now supports an explicit per-hidden-vector cosine along `dim=-1` as a semantically clean candidate evidence distance, averaged over layer and latent position, while the official baseline alignment remains unchanged. However, the exact ranking form, stop-gradient choice, margin/temperature, reduction, and `lambda_evidence` are not frozen because real Stage-2 teacher distances/gradients have not yet been measured.
-
-## Asset Decision After Step 26b
-- The public Stage-3 checkpoint is **not needed** for shape/mechanics inspection.
-- Existing local `Monet-7B` was sufficient to establish the runtime contract.
-- To measure real official teacher distances and calibrate the evidence-loss scale, the next justified model asset is the public `Monet-SFT-7B/stage2` checkpoint (teacher used by official Stage-3 precompute), not Stage-3.
-- Do not rebuild Stage1 or full teacher caches; a single-sample direct Stage-2 teacher probe is sufficient first.
+Runtime inspection supports explicit `dim=-1` hidden-vector cosine distance as a semantically clean candidate, averaged over layers and latent positions, while the official baseline `dim=1` alignment remains untouched. The exact ranking form, stop-gradient choice, margin/temperature, reduction, and `lambda_evidence` remain unfrozen until real Stage-2 teacher distances are measured.
 
 ## Active Constraints
 - No architecture change.
@@ -159,6 +170,8 @@ Runtime inspection now supports an explicit per-hidden-vector cosine along `dim=
 - Keep the frozen Step-24 negative operator unchanged.
 - Preserve official Stage-3 baseline alignment exactly in matched controls.
 - Do not use synthetic self-target scores to choose V0 loss hyperparameters.
+- Do not re-download Stage-2; its local shards are structurally verified.
+- Do not download Stage-3 for shape inspection.
 - Any continued-SFT V0 experiment must have a matched continued-SFT control with identical data/steps except the new evidence loss.
 
 ## Next Milestones
@@ -170,11 +183,11 @@ Runtime inspection now supports an explicit per-hidden-vector cosine along `dim=
 - [x] Validate and freeze full-image recovered-evidence neutral occlusion.
 - [x] Complete corrected static Stage-3 loss-contract audit.
 - [x] Complete local runtime shape/mechanics probe.
-- [ ] Acquire only the public Stage-2 SFT checkpoint needed for a real teacher-target probe.
-- [ ] Measure real positive/negative teacher-alignment distances and gradient/memory behavior on a tiny fixed sample.
+- [x] Acquire and structurally verify the public Stage-2 teacher checkpoint.
+- [ ] Measure real Stage-2 teacher alignment gaps on a small outcome-blind Visual_CoT cohort.
 - [ ] Freeze exact V0 evidence loss.
-- [ ] Run a tiny deterministic smoke test.
+- [ ] Run a tiny deterministic training smoke test.
 - [ ] Run matched continued-SFT baseline vs V0 pilot.
 
 ## Next Action
-Download only `NOVAglow646/Monet-SFT-7B/stage2` with a resumable, integrity-checked path, then run a single-sample real Stage-2 teacher-target probe. Do not download Stage-3.
+Run a small fixed-cohort real-teacher probe: generate official Stage-2 all-layer teacher targets using the exact precompute path, then compare original and frozen evidence-occluded student tensors from local `Monet-7B` using both the official default-dim alignment and explicit `dim=-1` hidden-vector distance. Use the result to choose the evidence metric family, not to claim benchmark improvement.
