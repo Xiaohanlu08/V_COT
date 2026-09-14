@@ -191,7 +191,7 @@ The Stage-1 rerun changed only the student checkpoint, so checkpoint mismatch do
 ---
 
 ## D015 — Freeze the counterfactual-delta metric family for V0
-**Status:** ACTIVE / LOSS WEIGHT PENDING ENGINEERING CALIBRATION
+**Status:** ACTIVE / LOSS WEIGHT PENDING MODEL-LEVEL CALIBRATION
 
 **Decision:** Use the counterfactual-delta metric that passed EXP-0025 as the first V0 evidence-metric family. For all-layer tensors `[29,8,3584]`:
 ```text
@@ -220,15 +220,17 @@ L_evidence_raw = 1 - score
 ```
 without introducing a margin, temperature, layer selector, latent-position selector, or secondary metric.
 
-**Gradient policy:** Teacher tensors, `Delta_T`, and `w` are fixed/stop-gradient. The validated student quantity is `Delta_S=N(S+)-N(S-)`; therefore both student branches remain differentiable by default. A stop-gradient on either student branch would change the validated optimization target and requires a new documented decision if ever introduced.
+**Gradient policy:** Teacher tensors, `Delta_T`, and `w` are fixed/stop-gradient. The validated student quantity is `Delta_S=N(S+)-N(S-)`; both student branches remain differentiable. A stop-gradient on either student branch would change the validated optimization target and requires a new documented decision.
 
-**Not yet frozen:** `lambda_evidence`. Do not choose it from the raw scalar loss magnitude. First verify representation gradients, then measure parameter-gradient scale and train-time memory in the actual Stage-3 path.
+**Representation-gradient verification:** EXP-0026 reproduced the frozen score exactly (`max_score_reconstruction_error=0.0`) and passed all 12 gradient contracts. Both student branches received finite nonzero gradients with similar mean L2 norms (`3.0226e-4` positive, `3.0418e-4` negative). Teacher tensors, `Delta_T`, and weights remained stop-gradient. The flattened branch-gradient cosine averaged about `-0.9006`, which is mechanically consistent with optimizing the paired difference and is not used for weighting.
 
-**What this pass establishes:** Directional alignment of evidence-removal-induced latent change between teacher and student under the frozen paired Visual_CoT intervention on the fresh calibration cohort.
+**Not yet frozen:** `lambda_evidence`. Do not choose it from raw scalar loss magnitude or representation-gradient magnitude. The next requirement is a model-level Stage-3 backward/memory smoke under official-style ZeRO-2, followed by a separate pre-specified parameter-gradient calibration.
 
-**What this does not establish:** Benchmark improvement, answer-level utility, full-data coverage, train-time stability, or an optimal evidence-loss weight.
+**What this pass establishes:** Directional alignment of evidence-removal-induced latent change between teacher and student under the frozen paired Visual_CoT intervention, plus representation-level differentiability of the direct loss.
 
-**Revisit condition:** Reopen the metric family only if the direct loss is mechanically non-differentiable/unstable in the real Stage-3 path or if a matched V0 experiment fails and a new independently motivated formulation is pre-specified.
+**What this does not establish:** Benchmark improvement, answer-level utility, full-data coverage, train-time memory feasibility, optimizer-step stability, model-parameter gradient scale, or an optimal evidence-loss weight.
+
+**Revisit condition:** Reopen the metric family only if the direct loss is mechanically unstable in the real Stage-3 model-level backward path or if a matched V0 experiment fails and a new independently motivated formulation is pre-specified.
 
 ---
 
