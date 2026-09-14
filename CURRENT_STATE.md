@@ -49,34 +49,30 @@ L_base = L_CE + lambda_align * L_align_official
 ```
 The pinned all-layer baseline alignment uses PyTorch cosine default `dim=1`; preserve that exact behavior in matched controls.
 
-## Verified Model Assets
-- Stage-2 teacher: structurally verified; do not re-download.
-- Stage-1 Stage-3 initialization: structurally verified and all four upstream shard SHA-256 values match; do not re-download.
-- Stage-3 checkpoint remains unnecessary for current preparation work.
-
-## EXP-0021 / EXP-0023 — SAME-TEACHER NATURAL RANKING REJECTED
-The pre-specified same-teacher candidate failed the frozen gate on both final Monet and official Stage-1 student initialization. Therefore reject:
+## Rejected Branch — SAME-TEACHER NATURAL RANKING
+EXP-0021 and EXP-0023 rejected the assumption
 ```text
 D(T, S_negative) > D(T, S_positive)
 ```
 for one shared helper-derived Stage-2 target. Do not rescue it by changing rows, layers, latent positions, thresholds, filters, margins, or switching post-hoc to official `dim=1`.
 
-## EXP-0024 — Fresh Counterfactual-Delta Cohort Freeze — PASSED
-Fresh outcome-blind cohort:
+## Counterfactual-Delta Redesign — PASSED
+Fresh frozen cohort:
 ```text
 seed: 20260914
 rows: [5345,43387,48794,56294,64481,69518,87598,92915,94395,103479,111682,113005]
 selection SHA256: bdd8e027b8f9aa367045dcda049d12aa4745bb3c4f918cc0b6433c7172826798
 ```
-Paired Stage-2 teacher views:
-```text
-T+ input = original source + official helper
-T- input = frozen Step-24 occluded source + same-size neutral helper
-```
-Mechanical result: `12/12` valid.
 
-## EXP-0025 — Counterfactual-Delta Metric — PASSED PRE-SPECIFIED GATE
-Frozen primary metric on tensors `[29,8,3584]`:
+Paired teacher/student views:
+```text
+T+ = Stage-2 teacher on original source + official helper
+T- = Stage-2 teacher on Step-24 occluded source + same-size neutral helper
+S+ = Stage-1/Stage-3 student on original source
+S- = Stage-1/Stage-3 student on frozen Step-24 occluded source
+```
+
+Frozen metric:
 ```text
 N(X)[l,t,:] = X[l,t,:] / ||X[l,t,:]||_2
 Delta_T = N(T+) - N(T-)
@@ -84,29 +80,20 @@ Delta_S = N(S+) - N(S-)
 c[l,t] = cosine(Delta_T[l,t,:], Delta_S[l,t,:], dim=-1)
 w[l,t] = ||Delta_T[l,t,:]||_2
 score = sum(w*c) / sum(w)
+L_evidence_raw = 1 - score
 ```
-Frozen gate:
-```text
-all 12 runtime samples valid and finite
-AND positive primary scores >= 10/12
-AND median primary score > 0
-AND mean primary score > 0
-```
-Observed:
+
+EXP-0025 passed its pre-specified gate:
 ```text
 runtime valid: 12/12
 positive primary scores: 10/12
-mean primary score: +0.0067885655
-median primary score: +0.0069745332
+mean score: +0.0067885655
+median score: +0.0069745332
 one-sided exact sign-test p: 0.019287109375
 gate: true
 ```
 
 ## D015 Evidence Metric — FROZEN; WEIGHT NOT YET FROZEN
-Direct evidence loss:
-```text
-L_evidence_raw = 1 - score
-```
 Frozen gradient policy:
 ```text
 T+, T-, Delta_T, w: stop-gradient
@@ -118,56 +105,63 @@ No margin, temperature, layer selector, latent-position selector, or secondary m
 `lambda_evidence` remains unfrozen.
 
 ## EXP-0026 — Representation-Gradient Audit — PASSED
-The exact D015 loss was reconstructed on the same frozen 12-row cohort with zero score-reconstruction error.
-
-Mechanical contract:
+The exact D015 loss reconstructed the frozen score with zero error and passed all 12 representation-gradient contracts:
 ```text
 all_12_gradient_contracts_passed: true
 teacher_and_weights_stop_gradient: true
 both_student_branches_differentiable: true
 max_score_reconstruction_error: 0.0
 ```
-Representation-gradient magnitudes:
-```text
-positive branch grad L2 mean:   0.0003022579282
-positive branch grad L2 median: 0.0002328506162
-negative branch grad L2 mean:   0.0003041839409
-negative branch grad L2 median: 0.0002404905899
-```
-Positive-vs-negative flattened gradient cosine:
-```text
-mean:   -0.9006003042
-median: -0.8951198161
-```
-The near-opposite branch gradients are mechanically consistent with optimizing a paired difference `Delta_S=N(S+)-N(S-)`; they are descriptive only and must not be used to set `lambda_evidence`.
+Mean representation-gradient L2 norms were `3.0226e-4` for `S+` and `3.0418e-4` for `S-`. Their flattened gradient cosine averaged about `-0.9006`, mechanically consistent with a paired difference objective. These values must not be used to set `lambda_evidence`.
 
-This pass establishes representation-level differentiability only. It does not establish full-model parameter-gradient scale, ZeRO-2 training memory, optimizer stability, or benchmark improvement.
+## EXP-0027 — Official-Style ZeRO-2 Model-Level Smoke — ENGINEERING BLOCKER
+The fixed row-5345 8-GPU RTX-3090 ZeRO-2 smoke failed from genuine per-rank CUDA capacity exhaustion **before backward**.
+
+Baseline:
+```text
+positive latent forward completed
+OOM in positive second Stage-3 forward (pos_out)
+request: 12 MiB
+free: ~19 MiB
+PyTorch allocated: ~23.09 GiB / 23.57 GiB device
+```
+
+V0:
+```text
+OOM earlier in negative latent forward (neg_latent)
+request: 20 MiB
+free: ~21 MiB
+PyTorch allocated: ~23.09 GiB / 23.57 GiB device
+```
+
+Reserved-but-unallocated memory was only about 17–21 MiB, and `expandable_segments=True` was already enabled. This is therefore a real 24-GB capacity blocker, not primarily fragmentation.
+
+Because the **baseline itself OOMs**, EXP-0027 is not evidence against D015 and does not change the scientific metric status.
 
 ## Active Constraints
 - No architecture change.
 - V0 remains SFT-only; no VLPO changes yet.
 - VStar confirmatory samples remain probing/evaluation only, never training data.
 - Keep the frozen Step-24 student negative operator unchanged.
-- Preserve official Stage-3 baseline loss exactly in matched controls.
+- Preserve the official Stage-3 baseline loss exactly in matched controls.
 - Same-teacher ranking remains rejected.
-- Do not change the fresh 12-row counterfactual calibration cohort to retune the metric.
-- Do not select layers/latents or switch to a secondary diagnostic post-hoc.
-- Do not choose `lambda_evidence` from raw loss magnitude or representation-gradient magnitude.
-- Any eventual V0 run requires a matched control with identical data/steps except the evidence term.
+- Do not retune the frozen counterfactual metric on its calibration cohort.
+- Do not choose `lambda_evidence` from raw loss magnitude, representation-gradient magnitude, or the single row-5345 engineering smoke.
+- Any eventual V0 run requires a matched control with identical model/data/objective except the evidence term.
 
 ## Next Milestones
 - [x] Confirm target-specific latent sensitivity.
 - [x] Freeze Visual_CoT full-image neutral occlusion.
 - [x] Resolve Stage-3 tensor/runtime contract.
 - [x] Verify Stage-2 teacher and Stage-1 initialization.
-- [x] Reject same-teacher natural ranking after two unchanged frozen-gate tests.
-- [x] Freeze fresh counterfactual-delta cohort and paired teacher intervention.
-- [x] Pass the pre-specified counterfactual-delta metric gate.
+- [x] Reject same-teacher natural ranking.
+- [x] Freeze and pass the counterfactual-delta metric gate.
 - [x] Verify finite/nonzero representation gradients to both student branches.
-- [ ] Run model-level Stage-3 backward/memory smoke under official-style ZeRO-2.
-- [ ] Measure model-parameter gradient scales for baseline vs raw evidence term.
-- [ ] Freeze `lambda_evidence` using a pre-specified parameter-gradient criterion.
+- [x] Identify official-style ZeRO-2 on 24-GB RTX 3090 as a model-level memory blocker.
+- [ ] Test the exact same baseline/V0 computation under ZeRO-3 with no CPU offload.
+- [ ] If model-level training fits, pre-specify and measure parameter-gradient scales.
+- [ ] Freeze `lambda_evidence` only from a separate multi-sample parameter-gradient calibration.
 - [ ] Run a deterministic matched baseline vs V0 smoke test.
 
 ## Next Action
-Run a model-level engineering smoke test with verified Stage-1 initialization under the official-style ZeRO-2 distributed path. Use one fixed engineering sample only to test backward/optimizer/memory feasibility and the exact two-branch evidence graph. Do not freeze `lambda_evidence` from that single sample. Parameter-gradient calibration must be a separate pre-specified step after memory feasibility is established.
+Run Step 32b2: keep row 5345, Stage-1 checkpoint, 2000-token Stage-3 image budget, CE/alignment objective, D015 evidence graph, and all scientific inputs unchanged; change only DeepSpeed memory partitioning from ZeRO-2 to ZeRO-3 with no CPU offload. This is an engineering memory discriminator, not a new scientific experiment and not lambda calibration.
